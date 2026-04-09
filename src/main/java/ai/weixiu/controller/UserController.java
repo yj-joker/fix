@@ -1,6 +1,17 @@
 package ai.weixiu.controller;
 
 
+import ai.weixiu.pojo.Result;
+import ai.weixiu.pojo.dto.UserDTO;
+import ai.weixiu.pojo.vo.UserVO;
+import ai.weixiu.service.UserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.AllArgsConstructor;
+import org.springframework.web.HttpRequestHandler;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +26,17 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/weixiu/user")
+@AllArgsConstructor
+@Tag(name = "用户管理")
 public class UserController {
-
+              private final UserService userService;
+ /*
+ * 用户登录
+ * */
+    @PostMapping("/login")
+    @Operation(summary = "用户登录")
+    public Result login(@RequestBody UserDTO userDTO, HttpServletRequest httpRequest){
+        UserVO userVO = userService.login(userDTO, httpRequest);
+        return Result.success(userVO);
+    }
 }

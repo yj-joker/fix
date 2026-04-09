@@ -8,7 +8,6 @@ import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
 
 import java.io.Serializable;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -31,7 +30,7 @@ public class User implements Serializable {
      * 主键
      */
     @TableId(value = "id", type = IdType.AUTO)
-    private Integer id;
+    private Long id;
 
     /**
      * 身份证号，登录账号
@@ -71,7 +70,7 @@ public class User implements Serializable {
     /**
      * 入职日期
      */
-    private LocalDate hireDate;
+    private LocalDateTime hireDate;
 
     /**
      * 0=未激活, 1=已激活

@@ -12,9 +12,9 @@ public class OpenApiConfiguration {
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
             .info(new Info()
-                .title("AI Collaboration API")
+                .title("AI fix API")
                 .version("1.0")
-                .description("AI协作平台API文档"));
+                .description("AI Fix API文档"));
     }
 }
 
