@@ -1,4 +1,4 @@
-package com.ai.weixiu;
+package ai.weixiu;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
