@@ -7,6 +7,7 @@ import ai.weixiu.pojo.vo.UserVO;
 import com.baomidou.mybatisplus.extension.service.IService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.HttpRequestHandler;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * <p>
@@ -18,6 +19,10 @@ import org.springframework.web.HttpRequestHandler;
  */
 public interface UserService extends IService<User> {
 
+    int register(MultipartFile file);
 
     UserVO login(UserDTO userDTO, HttpServletRequest httpServletRequest);
+
+
+
 }

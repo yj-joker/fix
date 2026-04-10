@@ -1,12 +1,12 @@
 package ai.weixiu.service.impl;
 
 import ai.weixiu.exceprion.NameOrPasswordException;
-import ai.weixiu.exceprion.NullException;
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.pojo.entity.User;
 import ai.weixiu.mapper.UserMapper;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
+import ai.weixiu.utils.ExcelUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,8 +17,15 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -37,25 +44,84 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private final RedisTemplate redisTemplate;
     private final PasswordEncoder passwordEncoder;
 
+
+    @Override
+    @Transactional
+    public int register(MultipartFile file) {
+        //读取excel获取数据
+        List<User> users = ExcelUtils.readExcel(file, User.class);
+        log.info("共读取到 {} 条数据，开始处理", users.size());
+
+        // 创建线程池，线程数根据CPU核心数设置
+        int threadCount = Runtime.getRuntime().availableProcessors();
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        //设置每次处理的记录数
+        int batchSize = 500;
+        List<CompletableFuture<List<User>>> futures = new ArrayList<>();
+
+        // 多线程并行处理密码加密
+        for (int i = 0; i < users.size(); i += batchSize) {
+            int start = i;
+            int end = Math.min(i + batchSize, users.size());
+            List<User> batch = users.subList(start, end);
+
+            CompletableFuture<List<User>> future = CompletableFuture.supplyAsync(() -> {
+                LocalDateTime now = LocalDateTime.now();
+                for (User user : batch) {
+                    user.setPassword(passwordEncoder.encode("123456"));
+                    user.setCreateTime(now);
+                    user.setUpdateTime(now);
+                }
+                return batch;
+            }, executor);
+            futures.add(future);
+        }
+
+        // 等待所有加密任务完成
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        // 收集加密后的数据并保存
+        List<User> allProcessedUsers = new ArrayList<>();
+        for (CompletableFuture<List<User>> future : futures) {
+            allProcessedUsers.addAll(future.join());
+        }
+
+        // 分批保存到数据库
+        int totalSaved = 0;
+        for (int i = 0; i < allProcessedUsers.size(); i += batchSize) {
+            int end = Math.min(i + batchSize, allProcessedUsers.size());
+            List<User> batch = allProcessedUsers.subList(i, end);
+            this.saveBatch(batch);
+            totalSaved += batch.size();
+            log.info("已保存第 {} 批数据，累计 {} 条", (i / batchSize + 1), totalSaved);
+        }
+
+        // 关闭线程池
+        executor.shutdown();
+        try {
+            executor.awaitTermination(1, TimeUnit.HOURS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        log.info("全部数据保存完成，共 {} 条", totalSaved);
+        return totalSaved;
+    }
+
     @Override
     public UserVO login(UserDTO userDTO, HttpServletRequest httpServletRequest) {
-
-        if (userDTO == null) {
-            log.error("用户信息不能为空");
-            throw new NullException("用户信息不能为空");
-        }
         // 查询用户
         LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(User::getUsername, userDTO.getUsername());
         User user = this.getOne(queryWrapper);
         // 用户不存在
         if (user == null) {
-            log.error("用户不存在");
+            log.info("用户不存在");
             throw new NameOrPasswordException("用户名或密码错误");
         } else {
             //进行bcrypt密码校验
             if (!passwordEncoder.matches(userDTO.getPassword(), user.getPassword())) {
-                log.error("密码错误");
+                log.info("密码错误");
                 throw new NameOrPasswordException("用户名或密码错误");
             }
         }
@@ -72,4 +138,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         log.info("用户登录成功");
         return userVO;
     }
+
+
 }
