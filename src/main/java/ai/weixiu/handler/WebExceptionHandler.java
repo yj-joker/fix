@@ -2,6 +2,7 @@ package ai.weixiu.handler;
 
 
 
+import ai.weixiu.exceprion.ActivateException;
 import ai.weixiu.exceprion.NameOrPasswordException;
 import ai.weixiu.exceprion.NullException;
 import ai.weixiu.pojo.Result;
@@ -26,8 +27,14 @@ public class WebExceptionHandler {
         return Result.error("200", e.getMessage());
     }
 
-@ExceptionHandler(NameOrPasswordException.class)
+    @ExceptionHandler(NameOrPasswordException.class)
     public Result handler(NameOrPasswordException e) {
+        log.info(e.getMessage());
+        return Result.error("200", e.getMessage());
+    }
+
+    @ExceptionHandler(ActivateException.class)
+    public Result handler(ActivateException e) {
         log.info(e.getMessage());
         return Result.error("200", e.getMessage());
     }

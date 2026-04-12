@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn spring-boot:run)",
+      "Bash(curl -s -X POST http://localhost:8080/weixiu/user/list -H 'Content-Type: application/json' -d '{\"page\":1,\"size\":10}')"
+    ]
+  }
+}

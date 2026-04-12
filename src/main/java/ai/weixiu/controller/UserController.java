@@ -3,6 +3,7 @@ package ai.weixiu.controller;
 
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.UserDTO;
+import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 /**
  * <p>
@@ -52,5 +55,13 @@ public class UserController {
         UserVO userVO = userService.login(userDTO, httpRequest);
         return Result.success(userVO);
     }
-
+    /*
+     * 分页查询所有用户
+     * */
+    @PostMapping("/list")
+    @Operation(summary = "分页查询所有用户")
+    public Result list(@RequestBody UserQuery userQuery) {
+        List<UserVO> userVOList = userService.getUserList(userQuery);
+        return Result.success(userVOList);
+    }
 }

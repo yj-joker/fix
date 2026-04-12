@@ -1,13 +1,16 @@
 package ai.weixiu.service.impl;
 
+import ai.weixiu.enumerate.StatusEnum;
 import ai.weixiu.exceprion.NameOrPasswordException;
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.entity.User;
 import ai.weixiu.mapper.UserMapper;
+import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
 import ai.weixiu.utils.ExcelUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -18,6 +21,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
@@ -125,6 +129,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 throw new NameOrPasswordException("用户名或密码错误");
             }
         }
+        if(user.getStatus() == StatusEnum.DEACTIVATED.getCode()){
+            throw new ArithmeticException("用户未激活,请先激活");
+        }
         // 登录成功,设置最后登录时间
         user.setLastLoginTime(LocalDateTime.now());
         this.updateById(user);
@@ -139,5 +146,31 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return userVO;
     }
 
+    @Override
+    public List<UserVO> getUserList(UserQuery userQuery) {
+        Page<User> page = new Page<>(userQuery.getPage(), userQuery.getSize());
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
 
+        // 链式拼接查询条件，null 和 "" 自动跳过
+        wrapper.like(StringUtils.hasText(userQuery.getName()), User::getName, userQuery.getName())
+               .eq(StringUtils.hasText(userQuery.getNumber()), User::getNumber, userQuery.getNumber())
+               .eq(userQuery.getGender() != null, User::getGender, userQuery.getGender())
+               .like(StringUtils.hasText(userQuery.getPhone()), User::getPhone, userQuery.getPhone())
+               .ge(userQuery.getHireDate() != null, User::getHireDate, userQuery.getHireDate());
+
+        // 排序
+        if (userQuery.getSortBy() != null) {
+            wrapper.orderBy(true,
+                    userQuery.getIsAsc() == 1,
+                    User::getCreateTime); // 替换为实际的排序字段
+        }
+
+        Page<User> result = this.page(page, wrapper);
+        List<UserVO> userVOList = result.getRecords().stream().map(user -> {
+            UserVO vo = new UserVO();
+            BeanUtils.copyProperties(user, vo);
+            return vo;
+        }).toList();
+        return  userVOList;
+    }
 }

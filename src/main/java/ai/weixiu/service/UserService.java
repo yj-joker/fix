@@ -2,10 +2,13 @@ package ai.weixiu.service;
 
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.entity.User;
+import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
 import com.baomidou.mybatisplus.extension.service.IService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 /**
  * <p>
@@ -21,6 +24,5 @@ public interface UserService extends IService<User> {
 
     UserVO login(UserDTO userDTO, HttpServletRequest httpServletRequest);
 
-
-
+    List<UserVO> getUserList(UserQuery userQuery);
 }
