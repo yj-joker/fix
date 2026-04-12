@@ -1,6 +1,6 @@
 package ai.weixiu;
 
-import ai.weixiu.pojo.entity.User;
+import ai.weixiu.entity.User;
 import ai.weixiu.utils.ExcelUtils;
 import com.alibaba.excel.EasyExcel;
 import org.junit.jupiter.api.Test;

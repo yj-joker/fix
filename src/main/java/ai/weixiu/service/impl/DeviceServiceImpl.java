@@ -1,6 +1,6 @@
 package ai.weixiu.service.impl;
 
-import ai.weixiu.pojo.entity.Device;
+import ai.weixiu.entity.Device;
 import ai.weixiu.repository.DeviceRepository;
 import ai.weixiu.service.DeviceService;
 import lombok.AllArgsConstructor;

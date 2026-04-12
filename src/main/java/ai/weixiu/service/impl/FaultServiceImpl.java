@@ -1,6 +1,6 @@
 package ai.weixiu.service.impl;
 
-import ai.weixiu.pojo.entity.Fault;
+import ai.weixiu.entity.Fault;
 import ai.weixiu.repository.FaultRepository;
 import ai.weixiu.service.FaultService;
 import lombok.AllArgsConstructor;

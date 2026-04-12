@@ -12,9 +12,6 @@ import java.util.Arrays;
 
 /**
  * 自动校验controller层所有方法的参数是否合法。
- * 在所有controller方法执行前，对传入的参数进行非空校验。
- * 异常处理：
- * 当参数校验失败时，抛出{@link NullException}异常，
  */
 @Aspect
 @Component
@@ -52,14 +49,14 @@ public class ParamValidateAspect {
 
         // 遍历所有参数进行校验
         Arrays.stream(args).forEach(arg -> {
-            // 规则1：参数不能为null
+            // 参数不能为null
             if (arg == null) {
-                log.warn("参数校验失败：参数为null");
+                log.info("参数校验失败：参数为null");
                 throw new NullException("参数不能为空");
             }
-            // 规则2：String类型参数不能为空字符串
+            // tring类型参数不能为空字符串
             if (arg instanceof String && ((String) arg).isEmpty()) {
-                log.warn("参数校验失败：参数为空字符串");
+                log.info("参数校验失败：参数为空字符串");
                 throw new NullException("参数不能为空字符串");
             }
         });

@@ -1,6 +1,6 @@
 package ai.weixiu.service;
 
-import ai.weixiu.pojo.entity.Fault;
+import ai.weixiu.entity.Fault;
 
 import java.util.List;
 import java.util.Optional;

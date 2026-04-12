@@ -1,4 +1,4 @@
-package ai.weixiu.pojo.entity;
+package ai.weixiu.entity;
 
 import com.alibaba.excel.annotation.ExcelIgnore;
 import com.alibaba.excel.annotation.ExcelProperty;

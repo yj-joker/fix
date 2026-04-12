@@ -1,6 +1,6 @@
 package ai.weixiu.repository;
 
-import ai.weixiu.pojo.entity.Device;
+import ai.weixiu.entity.Device;
 import org.springframework.data.neo4j.repository.Neo4jRepository;
 import org.springframework.stereotype.Repository;
 

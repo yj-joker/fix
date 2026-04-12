@@ -1,7 +1,7 @@
 package ai.weixiu.controller;
 
 import ai.weixiu.pojo.Result;
-import ai.weixiu.pojo.entity.Component;
+import ai.weixiu.entity.Component;
 import ai.weixiu.service.ComponentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

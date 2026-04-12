@@ -1,4 +1,4 @@
-package ai.weixiu.pojo.entity;
+package ai.weixiu.entity;
 
 
 import lombok.AllArgsConstructor;

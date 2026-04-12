@@ -1,6 +1,6 @@
 package ai.weixiu.service.impl;
 
-import ai.weixiu.pojo.entity.Component;
+import ai.weixiu.entity.Component;
 import ai.weixiu.repository.ComponentRepository;
 import ai.weixiu.service.ComponentService;
 import lombok.AllArgsConstructor;

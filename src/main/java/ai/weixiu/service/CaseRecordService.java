@@ -1,6 +1,6 @@
 package ai.weixiu.service;
 
-import ai.weixiu.pojo.entity.CaseRecord;
+import ai.weixiu.entity.CaseRecord;
 
 import java.util.List;
 import java.util.Optional;

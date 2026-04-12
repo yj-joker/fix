@@ -1,6 +1,6 @@
 package ai.weixiu.service.impl;
 
-import ai.weixiu.pojo.entity.CaseRecord;
+import ai.weixiu.entity.CaseRecord;
 import ai.weixiu.repository.CaseRecordRepository;
 import ai.weixiu.service.CaseRecordService;
 import lombok.AllArgsConstructor;

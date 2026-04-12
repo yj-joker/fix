@@ -1,6 +1,6 @@
 package ai.weixiu.service;
 
-import ai.weixiu.pojo.entity.Device;
+import ai.weixiu.entity.Device;
 
 import java.util.List;
 import java.util.Optional;

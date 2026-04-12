@@ -2,7 +2,7 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.exceprion.NameOrPasswordException;
 import ai.weixiu.pojo.dto.UserDTO;
-import ai.weixiu.pojo.entity.User;
+import ai.weixiu.entity.User;
 import ai.weixiu.mapper.UserMapper;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;

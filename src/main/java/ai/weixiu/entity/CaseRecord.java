@@ -1,4 +1,4 @@
-package ai.weixiu.pojo.entity;
+package ai.weixiu.entity;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -40,6 +40,9 @@ public class CaseRecord {
 
     @Property("downtime")//停机时长（分钟）
     private Integer downtime;
+
+    @Property("experience_summary")//经验总结
+    private String experienceSummary;
 
     @Property("cost")//维修成本
     private Double cost;
