@@ -3,6 +3,7 @@ package ai.weixiu.controller;
 
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.UserDTO;
+import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
@@ -11,12 +12,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
-import org.springframework.web.HttpRequestHandler;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.*;
 
-import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -51,9 +48,38 @@ public class UserController {
      * */
     @PostMapping("/login")
     @Operation(summary = "用户登录")
-    public Result login(@Valid @RequestBody UserDTO userDTO, HttpServletRequest httpRequest) {
-        UserVO userVO = userService.login(userDTO, httpRequest);
+    public Result login(@Valid @RequestBody UserLoginDTO userLoginDTO, HttpServletRequest httpRequest) {
+        UserVO userVO = userService.login(userLoginDTO, httpRequest);
         return Result.success(userVO);
+    }
+
+    /*
+     * 根据用户id查询用户信息
+     * */
+    @PostMapping("/getUserById")
+    @Operation(summary = "根据用户id查询用户信息")
+    public Result getUserById(Integer id) {
+        UserVO userVO = userService.getUserById(id);
+        return Result.success(userVO);
+    }
+
+    /*
+     * 根据用户id批量删除用户
+     * */
+    @DeleteMapping("/deleteByIds")
+    @Operation(summary = "根据用户id批量删除用户")
+    public Result deleteByIds(@RequestBody List<Integer> ids) {
+        userService.removeByIds(ids);
+        return Result.success();
+    }
+    /*
+    * 根据用户id修改用户信息
+    * */
+    @PostMapping("/updateUser")
+    @Operation(summary = "修改用户信息")
+    public Result updateById(@RequestBody UserDTO userDTO) {
+        userService.updateUser(userDTO);
+        return Result.success();
     }
     /*
      * 分页查询所有用户

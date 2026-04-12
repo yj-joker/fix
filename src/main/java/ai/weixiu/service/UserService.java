@@ -1,6 +1,7 @@
 package ai.weixiu.service;
 
 import ai.weixiu.pojo.dto.UserDTO;
+import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.entity.User;
 import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
@@ -22,7 +23,12 @@ public interface UserService extends IService<User> {
 
     int register(MultipartFile file);
 
-    UserVO login(UserDTO userDTO, HttpServletRequest httpServletRequest);
+    UserVO login(UserLoginDTO userLoginDTO, HttpServletRequest httpServletRequest);
 
     List<UserVO> getUserList(UserQuery userQuery);
+
+    UserVO getUserById(Integer id);
+
+    void updateUser(UserDTO userDTO);
+
 }

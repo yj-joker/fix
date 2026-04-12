@@ -3,6 +3,7 @@ package ai.weixiu.service.impl;
 import ai.weixiu.enumerate.StatusEnum;
 import ai.weixiu.exceprion.NameOrPasswordException;
 import ai.weixiu.pojo.dto.UserDTO;
+import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.entity.User;
 import ai.weixiu.mapper.UserMapper;
 import ai.weixiu.pojo.query.UserQuery;
@@ -10,6 +11,7 @@ import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
 import ai.weixiu.utils.ExcelUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,7 +50,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private final RedisTemplate redisTemplate;
     private final PasswordEncoder passwordEncoder;
 
-
+    /*
+     * 批量添加 用户
+     * */
     @Override
     @Transactional
     public int register(MultipartFile file) {
@@ -112,11 +116,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return totalSaved;
     }
 
+    /*
+     * 用户登录
+     * */
     @Override
-    public UserVO login(UserDTO userDTO, HttpServletRequest httpServletRequest) {
+    public UserVO login(UserLoginDTO userLoginDTO, HttpServletRequest httpServletRequest) {
         // 查询用户
         LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(User::getUsername, userDTO.getUsername());
+        queryWrapper.eq(User::getUsername, userLoginDTO.getUsername());
         User user = this.getOne(queryWrapper);
         // 用户不存在
         if (user == null) {
@@ -124,12 +131,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new NameOrPasswordException("用户名或密码错误");
         } else {
             //进行bcrypt密码校验
-            if (!passwordEncoder.matches(userDTO.getPassword(), user.getPassword())) {
+            if (!passwordEncoder.matches(userLoginDTO.getPassword(), user.getPassword())) {
                 log.info("密码错误");
                 throw new NameOrPasswordException("用户名或密码错误");
             }
         }
-        if(user.getStatus() == StatusEnum.DEACTIVATED.getCode()){
+        if (user.getStatus() == StatusEnum.DEACTIVATED.getCode()) {
             throw new ArithmeticException("用户未激活,请先激活");
         }
         // 登录成功,设置最后登录时间
@@ -146,6 +153,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return userVO;
     }
 
+    /*
+     * 用户分页查询
+     * */
     @Override
     public List<UserVO> getUserList(UserQuery userQuery) {
         Page<User> page = new Page<>(userQuery.getPage(), userQuery.getSize());
@@ -153,10 +163,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         // 链式拼接查询条件，null 和 "" 自动跳过
         wrapper.like(StringUtils.hasText(userQuery.getName()), User::getName, userQuery.getName())
-               .eq(StringUtils.hasText(userQuery.getNumber()), User::getNumber, userQuery.getNumber())
-               .eq(userQuery.getGender() != null, User::getGender, userQuery.getGender())
-               .like(StringUtils.hasText(userQuery.getPhone()), User::getPhone, userQuery.getPhone())
-               .ge(userQuery.getHireDate() != null, User::getHireDate, userQuery.getHireDate());
+                .eq(StringUtils.hasText(userQuery.getNumber()), User::getNumber, userQuery.getNumber())
+                .eq(userQuery.getGender() != null, User::getGender, userQuery.getGender())
+                .like(StringUtils.hasText(userQuery.getPhone()), User::getPhone, userQuery.getPhone())
+                .ge(userQuery.getHireDate() != null, User::getHireDate, userQuery.getHireDate());
 
         // 排序
         if (userQuery.getSortBy() != null) {
@@ -171,6 +181,31 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             BeanUtils.copyProperties(user, vo);
             return vo;
         }).toList();
-        return  userVOList;
+        return userVOList;
+    }
+
+    /*
+     * 根据用户id查询对应用户
+     * */
+    @Override
+    public UserVO getUserById(Integer id) {
+        UserVO userVO = new UserVO();
+        User user = this.getById(id);
+        BeanUtils.copyProperties(user, userVO);
+        log.info("查询用户成功");
+        return userVO;
+    }
+    /*
+     * 修改用户信息
+     * */
+    @Override
+    public void updateUser(UserDTO userDTO) {
+          LambdaUpdateWrapper<User> wrapper = new LambdaUpdateWrapper<>();
+          wrapper.eq(User::getId, userDTO.getId())
+                  .set(User::getName, userDTO.getName())
+                  .set(User::getNumber, userDTO.getNumber())
+                  .set(User::getPhone, userDTO.getPhone())
+                  .set(User::getUpdateTime, LocalDateTime.now());
+          this.update(wrapper);
     }
 }
