@@ -21,7 +21,7 @@ import java.util.List;
  */
 public interface UserService extends IService<User> {
 
-    int register(MultipartFile file);
+    int batchRegister(MultipartFile file);
 
     UserVO login(UserLoginDTO userLoginDTO, HttpServletRequest httpServletRequest);
 

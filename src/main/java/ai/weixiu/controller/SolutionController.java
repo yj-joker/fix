@@ -1,7 +1,8 @@
 package ai.weixiu.controller;
 
-import ai.weixiu.pojo.Result;
 import ai.weixiu.entity.Solution;
+import ai.weixiu.pojo.Result;
+import ai.weixiu.pojo.dto.SolutionDTO;
 import ai.weixiu.service.SolutionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,18 +19,16 @@ public class SolutionController {
 
     private final SolutionService solutionService;
 
-    @PostMapping
+    @PostMapping("/save")
     @Operation(summary = "新增解决方案")
-    public Result<Solution> save(@RequestBody Solution solution) {
-        return Result.success(solutionService.save(solution));
+    public Result<Solution> save(@RequestBody SolutionDTO solutionDTO) {
+        return Result.success(solutionService.save(solutionDTO));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询解决方案")
     public Result<Solution> findById(@PathVariable String id) {
-        return solutionService.findById(id)
-                .map(Result::success)
-                .orElse(Result.error("404", "解决方案不存在"));
+        return Result.success(solutionService.findById(id).get());
     }
 
     @GetMapping("/list")
@@ -45,9 +44,9 @@ public class SolutionController {
         return Result.success();
     }
 
-    @PutMapping
+    @PutMapping("/update")
     @Operation(summary = "更新解决方案信息")
-    public Result<Solution> update(@RequestBody Solution solution) {
-        return Result.success(solutionService.update(solution));
+    public Result<Solution> update(@RequestBody SolutionDTO solutionDTO) {
+        return Result.success(solutionService.update(solutionDTO));
     }
 }

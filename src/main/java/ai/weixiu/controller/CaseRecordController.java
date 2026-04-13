@@ -1,7 +1,8 @@
 package ai.weixiu.controller;
 
-import ai.weixiu.pojo.Result;
 import ai.weixiu.entity.CaseRecord;
+import ai.weixiu.pojo.Result;
+import ai.weixiu.pojo.dto.CaseRecordDTO;
 import ai.weixiu.service.CaseRecordService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,18 +19,16 @@ public class CaseRecordController {
 
     private final CaseRecordService caseRecordService;
 
-    @PostMapping
+    @PostMapping("/save")
     @Operation(summary = "新增案例记录")
-    public Result<CaseRecord> save(@RequestBody CaseRecord caseRecord) {
-        return Result.success(caseRecordService.save(caseRecord));
+    public Result<CaseRecord> save(@RequestBody CaseRecordDTO caseRecordDTO) {
+        return Result.success(caseRecordService.save(caseRecordDTO));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询案例记录")
     public Result<CaseRecord> findById(@PathVariable String id) {
-        return caseRecordService.findById(id)
-                .map(Result::success)
-                .orElse(Result.error("404", "案例记录不存在"));
+        return Result.success(caseRecordService.findById(id).get());
     }
 
     @GetMapping("/list")
@@ -45,9 +44,9 @@ public class CaseRecordController {
         return Result.success();
     }
 
-    @PutMapping
+    @PutMapping("/update")
     @Operation(summary = "更新案例记录信息")
-    public Result<CaseRecord> update(@RequestBody CaseRecord caseRecord) {
-        return Result.success(caseRecordService.update(caseRecord));
+    public Result<CaseRecord> update(@RequestBody CaseRecordDTO caseRecordDTO) {
+        return Result.success(caseRecordService.update(caseRecordDTO));
     }
 }

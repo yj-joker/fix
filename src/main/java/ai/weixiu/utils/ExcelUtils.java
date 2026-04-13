@@ -1,5 +1,6 @@
 package ai.weixiu.utils;
 
+import ai.weixiu.exceprion.NullException;
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.context.AnalysisContext;
 import com.alibaba.excel.read.listener.ReadListener;
@@ -14,6 +15,19 @@ import java.util.List;
 @Slf4j
 @Component
 public class ExcelUtils<T> {
+
+    /**
+     * 校验文件是否为 Excel 文件（根据 MIME 类型判断）
+     */
+    public static boolean isExcelFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            log.info("文件为空");
+            return false;
+        }
+        String contentType = file.getContentType();
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(contentType)
+            || "application/vnd.ms-excel".equals(contentType);
+    }
 
     /*
     * 读取excel里对应数据的工具

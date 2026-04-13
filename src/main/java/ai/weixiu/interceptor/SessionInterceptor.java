@@ -14,7 +14,7 @@ import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
-@Component
+//@Component
 public class SessionInterceptor implements HandlerInterceptor {
     private final RedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;

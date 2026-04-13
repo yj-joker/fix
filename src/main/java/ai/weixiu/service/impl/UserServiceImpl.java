@@ -2,6 +2,8 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.enumerate.StatusEnum;
 import ai.weixiu.exceprion.NameOrPasswordException;
+import ai.weixiu.exceprion.NotFoundException;
+import ai.weixiu.exceprion.NullException;
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.entity.User;
@@ -10,6 +12,7 @@ import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
 import ai.weixiu.utils.ExcelUtils;
+import ai.weixiu.utils.IsNullUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -55,7 +58,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * */
     @Override
     @Transactional
-    public int register(MultipartFile file) {
+    public int batchRegister(MultipartFile file) {
+        //判断文件是否是excel文件
+        if (!ExcelUtils.isExcelFile(file)) {
+            throw new NullException("必须上传excel文件");
+        }
         //读取excel获取数据
         List<User> users = ExcelUtils.readExcel(file, User.class);
         log.info("共读取到 {} 条数据，开始处理", users.size());
@@ -191,6 +198,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     public UserVO getUserById(Integer id) {
         UserVO userVO = new UserVO();
         User user = this.getById(id);
+        if(IsNullUtils.isNull(user)){
+            throw new NotFoundException("用户不存在");
+        }
         BeanUtils.copyProperties(user, userVO);
         log.info("查询用户成功");
         return userVO;

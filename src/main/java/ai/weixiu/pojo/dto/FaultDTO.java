@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 @Data
 public class FaultDTO {
+    private String id;
     private String code;
     private String name;
     private String description;

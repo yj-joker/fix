@@ -1,7 +1,8 @@
 package ai.weixiu.controller;
 
-import ai.weixiu.pojo.Result;
 import ai.weixiu.entity.Device;
+import ai.weixiu.pojo.Result;
+import ai.weixiu.pojo.dto.DeviceDTO;
 import ai.weixiu.service.DeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,18 +19,16 @@ public class DeviceController {
 
     private final DeviceService deviceService;
 
-    @PostMapping
+    @PostMapping("/save")
     @Operation(summary = "新增设备")
-    public Result<Device> save(@RequestBody Device device) {
-        return Result.success(deviceService.save(device));
+    public Result<Device> save(@RequestBody DeviceDTO deviceDTO) {
+        return Result.success(deviceService.save(deviceDTO));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询设备")
     public Result<Device> findById(@PathVariable String id) {
-        return deviceService.findById(id)
-                .map(Result::success)
-                .orElse(Result.error("404", "设备不存在"));
+        return Result.success(deviceService.findById(id).get());
     }
 
     @GetMapping("/list")
@@ -45,9 +44,9 @@ public class DeviceController {
         return Result.success();
     }
 
-    @PutMapping
+    @PutMapping("/update")
     @Operation(summary = "更新设备信息")
-    public Result<Device> update(@RequestBody Device device) {
-        return Result.success(deviceService.update(device));
+    public Result<Device> update(@RequestBody DeviceDTO deviceDTO) {
+        return Result.success(deviceService.update(deviceDTO));
     }
 }

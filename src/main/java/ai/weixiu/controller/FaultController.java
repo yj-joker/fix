@@ -1,7 +1,8 @@
 package ai.weixiu.controller;
 
-import ai.weixiu.pojo.Result;
 import ai.weixiu.entity.Fault;
+import ai.weixiu.pojo.Result;
+import ai.weixiu.pojo.dto.FaultDTO;
 import ai.weixiu.service.FaultService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,18 +19,16 @@ public class FaultController {
 
     private final FaultService faultService;
 
-    @PostMapping
+    @PostMapping("/save")
     @Operation(summary = "新增故障")
-    public Result<Fault> save(@RequestBody Fault fault) {
-        return Result.success(faultService.save(fault));
+    public Result<Fault> save(@RequestBody FaultDTO faultDTO) {
+        return Result.success(faultService.save(faultDTO));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询故障")
     public Result<Fault> findById(@PathVariable String id) {
-        return faultService.findById(id)
-                .map(Result::success)
-                .orElse(Result.error("404", "故障不存在"));
+        return Result.success(faultService.findById(id).get());
     }
 
     @GetMapping("/list")
@@ -45,9 +44,9 @@ public class FaultController {
         return Result.success();
     }
 
-    @PutMapping
+    @PutMapping("/update")
     @Operation(summary = "更新故障信息")
-    public Result<Fault> update(@RequestBody Fault fault) {
-        return Result.success(faultService.update(fault));
+    public Result<Fault> update(@RequestBody FaultDTO faultDTO) {
+        return Result.success(faultService.update(faultDTO));
     }
 }

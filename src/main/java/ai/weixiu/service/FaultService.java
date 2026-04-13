@@ -1,6 +1,7 @@
 package ai.weixiu.service;
 
 import ai.weixiu.entity.Fault;
+import ai.weixiu.pojo.dto.FaultDTO;
 
 import java.util.List;
 import java.util.Optional;
@@ -8,40 +9,28 @@ import java.util.Optional;
 public interface FaultService {
 
     /**
-     * 保存一个新的故障节点到 Neo4j
-     *
-     * @param fault 待保存的故障对象
-     * @return 保存后的故障对象（含生成的 UUID）
+     * 新增故障
      */
-    Fault save(Fault fault);
+    Fault save(FaultDTO faultDTO);
 
     /**
      * 根据 ID 查询故障
-     *
-     * @param id 故障的唯一标识（UUID）
-     * @return 包含故障对象的 Optional，若不存在则为 empty
      */
     Optional<Fault> findById(String id);
 
     /**
      * 查询所有故障节点
-     *
-     * @return 故障列表
      */
     List<Fault> findAll();
 
     /**
      * 根据 ID 删除故障节点
-     *
-     * @param id 待删除故障的唯一标识（UUID）
      */
     void deleteById(String id);
 
     /**
-     * 更新故障信息（对象中需包含已有的 ID）
-     *
-     * @param fault 含更新内容的故障对象
-     * @return 更新后的故障对象
+     * 更新故障信息
      */
-    Fault update(Fault fault);
+    Fault update(FaultDTO faultDTO);
+
 }

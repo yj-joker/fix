@@ -1,7 +1,8 @@
 package ai.weixiu.controller;
 
-import ai.weixiu.pojo.Result;
 import ai.weixiu.entity.Component;
+import ai.weixiu.pojo.Result;
+import ai.weixiu.pojo.dto.ComponentDTO;
 import ai.weixiu.service.ComponentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,19 +19,16 @@ public class ComponentController {
 
     private final ComponentService componentService;
 
-    @PostMapping
+    @PostMapping("/save")
     @Operation(summary = "新增部件")
-    public Result<Component> save(@RequestBody Component component) {
-        Component saved = componentService.save(component);
-        return Result.success(saved);
+    public Result<Component> save(@RequestBody ComponentDTO componentDTO) {
+        return Result.success(componentService.save(componentDTO));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询部件")
     public Result<Component> findById(@PathVariable String id) {
-        return componentService.findById(id)
-                .map(Result::success)
-                .orElse(Result.error("404", "部件不存在"));
+        return Result.success(componentService.findById(id).get());
     }
 
     @GetMapping("/list")
@@ -46,9 +44,9 @@ public class ComponentController {
         return Result.success();
     }
 
-    @PutMapping
+    @PutMapping("/update")
     @Operation(summary = "更新部件信息")
-    public Result<Component> update(@RequestBody Component component) {
-        return Result.success(componentService.update(component));
+    public Result<Component> update(@RequestBody ComponentDTO componentDTO) {
+        return Result.success(componentService.update(componentDTO));
     }
 }

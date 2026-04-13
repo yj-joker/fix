@@ -38,8 +38,8 @@ public class UserController {
      * */
     @PostMapping("/register")
     @Operation(summary = "用户注册")
-    public Result register(MultipartFile file) {
-        userService.register(file);
+    public Result batchRegister(MultipartFile file) {
+        userService.batchRegister(file);
         return Result.success();
     }
 
