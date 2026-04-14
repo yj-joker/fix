@@ -75,7 +75,7 @@ public class UserController {
     /*
     * 根据用户id修改用户信息
     * */
-    @PostMapping("/updateUser")
+    @PutMapping("/updateUser")
     @Operation(summary = "修改用户信息")
     public Result updateById(@RequestBody UserDTO userDTO) {
         userService.updateUser(userDTO);
