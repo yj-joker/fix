@@ -22,23 +22,3 @@ CREATE TABLE `user` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
 
-create table chat_message_database
-(
-    id           bigint auto_increment comment '主键ID'
-        primary key,
-    memory_id    bigint                             not null comment '关联会话ID (即 LangChain4j 的 memoryId)',
-    message_idx  int                                not null comment '消息在会话中的顺序索引 (0, 1, 2...)',
-    msg_type     varchar(50)                        not null comment '消息类型: USER, AI, SYSTEM',
-    content_json text                               not null comment '消息内容的 JSON 序列化字符串',
-    created_at   datetime default CURRENT_TIMESTAMP null comment '入库时间'
-)
-    comment 'AI对话消息记录表';
-
-create index idx_session_id
-    on chat_message_database (memory_id)
-    comment '用于删除会话时定位消息';
-
-create index idx_session_id_idx
-    on chat_message_database (memory_id, message_idx)
-    comment '联合索引：用于快速按顺序读取某';
-

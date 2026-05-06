@@ -77,7 +77,11 @@ public class User implements Serializable {
      */
     @ExcelProperty(value = "手机号")
     private String phone;
-
+    /*
+    * 邮箱
+    * */
+    @ExcelProperty(value = "邮箱")
+    private String email;
     /**
      * 入职日期
      */

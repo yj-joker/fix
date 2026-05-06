@@ -1,13 +1,15 @@
 package ai.weixiu.interceptor;
 
+import ai.weixiu.common.RedisKey;
 import ai.weixiu.pojo.Result;
+import ai.weixiu.utils.BaseContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
@@ -25,7 +27,7 @@ public class SessionInterceptor implements HandlerInterceptor {
     }
 
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+    public boolean preHandle(HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) throws Exception {
         // 获取请求路径
         String uri = request.getRequestURI();
 
@@ -37,7 +39,7 @@ public class SessionInterceptor implements HandlerInterceptor {
         // 从 Redis 中校验登录状态
         HttpSession session = request.getSession();
         String sessionId = session.getId();
-        Object userId = redisTemplate.opsForValue().get("User:SessionId:" + sessionId);
+        Object userId = redisTemplate.opsForValue().get(RedisKey.USER_SESSION_ID + sessionId);
 
         if (userId == null) {
             log.info("用户未登录，拦截请求: {}", uri);
@@ -46,6 +48,8 @@ public class SessionInterceptor implements HandlerInterceptor {
         }
         // 续期 Redis 中的 session 过期时间
         redisTemplate.expire("User:SessionId:" + sessionId, 1, TimeUnit.DAYS);
+        //将当前用户的 id保存到 当前线程当中
+        BaseContext.setCurrentId(Long.parseLong(userId.toString()));
         log.info("用户已登录，userId: {}，请求: {}", userId, uri);
         return true;
     }

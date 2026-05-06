@@ -2,10 +2,7 @@ package ai.weixiu.handler;
 
 
 
-import ai.weixiu.exceprion.ActivateException;
-import ai.weixiu.exceprion.NameOrPasswordException;
-import ai.weixiu.exceprion.NotFoundException;
-import ai.weixiu.exceprion.NullException;
+import ai.weixiu.exceprion.*;
 import ai.weixiu.pojo.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -36,5 +33,10 @@ public class WebExceptionHandler {
     public Result handler(NotFoundException e) {
         log.info(e.getMessage());
         return Result.error("404", e.getMessage());
+    }
+    @ExceptionHandler(EmailException.class)
+    public Result handler(EmailException e) {
+        log.info(e.getMessage());
+        return Result.error("400", e.getMessage());
     }
 }

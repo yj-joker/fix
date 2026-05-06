@@ -1,6 +1,7 @@
 package ai.weixiu.controller;
 
 
+import ai.weixiu.entity.User;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.pojo.dto.UserLoginDTO;
@@ -86,8 +87,17 @@ public class UserController {
      * */
     @PostMapping("/list")
     @Operation(summary = "分页查询所有用户")
-    public Result list(@RequestBody UserQuery userQuery) {
+    public Result<List<UserVO>> list(@RequestBody UserQuery userQuery) {
         List<UserVO> userVOList = userService.getUserList(userQuery);
         return Result.success(userVOList);
+    }
+    /*
+    * 向邮箱发送验证码
+    * */
+    @PostMapping("/sendEmail")
+    @Operation(summary = "向邮箱发送验证码")
+    public Result sendEmail(String email,Integer mode) {
+        userService.sendEmail(email, mode);
+        return Result.success();
     }
 }

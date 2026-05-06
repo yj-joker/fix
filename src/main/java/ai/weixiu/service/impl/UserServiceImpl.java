@@ -1,6 +1,9 @@
 package ai.weixiu.service.impl;
 
+import ai.weixiu.common.RedisKey;
+import ai.weixiu.enumerate.EmailEnum;
 import ai.weixiu.enumerate.StatusEnum;
+import ai.weixiu.exceprion.EmailException;
 import ai.weixiu.exceprion.NameOrPasswordException;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.NullException;
@@ -11,6 +14,7 @@ import ai.weixiu.mapper.UserMapper;
 import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
+import ai.weixiu.utils.BaseContext;
 import ai.weixiu.utils.ExcelUtils;
 import ai.weixiu.utils.IsNullUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -21,8 +25,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.mail.MailException;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +41,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,12 +56,25 @@ import java.util.concurrent.TimeUnit;
  * @since 2026-04-08
  */
 @Service
-@AllArgsConstructor
 @Slf4j
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
     private final RedisTemplate redisTemplate;
     private final PasswordEncoder passwordEncoder;
+    private final JavaMailSender javaMailSender;
+    private String MyEmail;
+
+    @Autowired
+    public UserServiceImpl(RedisTemplate redisTemplate, PasswordEncoder passwordEncoder, JavaMailSender javaMailSender) {
+        this.redisTemplate = redisTemplate;
+        this.passwordEncoder = passwordEncoder;
+        this.javaMailSender = javaMailSender;
+    }
+
+    @Value("${spring.mail.username}")
+    public void setMyEmail(String MyEmail) {
+        this.MyEmail = MyEmail;
+    }
 
     /*
      * 批量添加 用户
@@ -76,9 +99,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         // 多线程并行处理密码加密
         for (int i = 0; i < users.size(); i += batchSize) {
-            int start = i;
             int end = Math.min(i + batchSize, users.size());
-            List<User> batch = users.subList(start, end);
+            List<User> batch = users.subList(i, end);
 
             CompletableFuture<List<User>> future = CompletableFuture.supplyAsync(() -> {
                 LocalDateTime now = LocalDateTime.now();
@@ -143,15 +165,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 throw new NameOrPasswordException("用户名或密码错误");
             }
         }
-        if (user.getStatus() == StatusEnum.DEACTIVATED.getCode()) {
-            throw new ArithmeticException("用户未激活,请先激活");
-        }
+//        if (Objects.equals(user.getStatus(), StatusEnum.DEACTIVATED.getCode())) {
+//            throw new ArithmeticException("用户未激活,请先激活");
+//        }
         // 登录成功,设置最后登录时间
         user.setLastLoginTime(LocalDateTime.now());
         this.updateById(user);
         HttpSession httpSession = httpServletRequest.getSession();
         //设置用户id到redis当中,过期时间1天
-        redisTemplate.opsForValue().set("User:SessionId:" + httpSession.getId(), user.getId(), 1, TimeUnit.DAYS);
+        redisTemplate.opsForValue().set(RedisKey.USER_SESSION_ID + httpSession.getId(), user.getId(), 1, TimeUnit.DAYS);
         log.info("设置session成功");
         //封装vo层数据
         UserVO userVO = new UserVO();
@@ -183,12 +205,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
 
         Page<User> result = this.page(page, wrapper);
-        List<UserVO> userVOList = result.getRecords().stream().map(user -> {
+        return result.getRecords().stream().map(user -> {
             UserVO vo = new UserVO();
             BeanUtils.copyProperties(user, vo);
             return vo;
         }).toList();
-        return userVOList;
     }
 
     /*
@@ -198,24 +219,65 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     public UserVO getUserById(Integer id) {
         UserVO userVO = new UserVO();
         User user = this.getById(id);
-        if(IsNullUtils.isNull(user)){
+        if (IsNullUtils.isNull(user)) {
             throw new NotFoundException("用户不存在");
         }
         BeanUtils.copyProperties(user, userVO);
         log.info("查询用户成功");
         return userVO;
     }
+
     /*
      * 修改用户信息
      * */
     @Override
     public void updateUser(UserDTO userDTO) {
-          LambdaUpdateWrapper<User> wrapper = new LambdaUpdateWrapper<>();
-          wrapper.eq(User::getId, userDTO.getId())
-                  .set(User::getName, userDTO.getName())
-                  .set(User::getNumber, userDTO.getNumber())
-                  .set(User::getPhone, userDTO.getPhone())
-                  .set(User::getUpdateTime, LocalDateTime.now());
-          this.update(wrapper);
+        LambdaUpdateWrapper<User> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(User::getId, userDTO.getId())
+                .set(User::getName, userDTO.getName())
+                .set(User::getNumber, userDTO.getNumber())
+                .set(User::getPhone, userDTO.getPhone())
+                .set(User::getUpdateTime, LocalDateTime.now());
+        this.update(wrapper);
     }
+
+    /*
+     * 发送验证码
+     * */
+    @Override
+    public void sendEmail(String email, Integer mode) {
+        //先判断邮箱格式是否符合规则
+        if (!email.matches("^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)+$")) {
+            throw new EmailException("邮箱格式不正确");
+        }
+        //判断用户是否反复发送
+        if (redisTemplate.hasKey(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId())) {
+            throw new EmailException("请勿重复发送验证码");
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        //从配置文件中获取当前设置的邮箱
+        message.setFrom(MyEmail);
+        //设置接收者邮箱
+        message.setTo(email);
+        //根据不同mode设置不同邮件标题
+        if (Objects.equals(mode, EmailEnum.ACTIVATION_EMAIL.getCode())) {
+         message.setSubject("维修平台绑定邮箱");
+        }
+        //设置邮件内容
+        String code=getCode();
+        message.setText("此次验证码:"+code);
+        //将验证码存入redis中，并设置过期时间
+        redisTemplate.opsForValue().set(RedisKey.USER_EMAIL_CODE +BaseContext.getCurrentId(), code, 1, TimeUnit.MINUTES);
+        javaMailSender.send(message);
+    }
+
+    private String getCode() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        StringBuilder code = new StringBuilder();
+        for (int i = 0; i < 6; i++) {
+            code.append(chars.charAt((int) (Math.random() * chars.length())));
+        }
+        return code.toString();
+    }
+
 }
