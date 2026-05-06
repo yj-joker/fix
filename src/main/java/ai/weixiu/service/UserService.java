@@ -32,4 +32,6 @@ public interface UserService extends IService<User> {
     void updateUser(UserDTO userDTO);
 
     void sendEmail(String email, Integer mode);
+
+    void verifyEmail(String code, Integer mode,String emailOrPassword);
 }

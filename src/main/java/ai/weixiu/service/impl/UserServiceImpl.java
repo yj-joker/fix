@@ -2,7 +2,6 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.common.RedisKey;
 import ai.weixiu.enumerate.EmailEnum;
-import ai.weixiu.enumerate.StatusEnum;
 import ai.weixiu.exceprion.EmailException;
 import ai.weixiu.exceprion.NameOrPasswordException;
 import ai.weixiu.exceprion.NotFoundException;
@@ -23,13 +22,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -261,14 +259,52 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         message.setTo(email);
         //根据不同mode设置不同邮件标题
         if (Objects.equals(mode, EmailEnum.ACTIVATION_EMAIL.getCode())) {
-         message.setSubject("维修平台绑定邮箱");
+            message.setSubject("维修平台绑定邮箱");
         }
         //设置邮件内容
-        String code=getCode();
-        message.setText("此次验证码:"+code);
+        String code = getCode();
+        message.setText("此次验证码:" + code);
         //将验证码存入redis中，并设置过期时间
-        redisTemplate.opsForValue().set(RedisKey.USER_EMAIL_CODE +BaseContext.getCurrentId(), code, 1, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId(), code, 1, TimeUnit.MINUTES);
         javaMailSender.send(message);
+    }
+
+    /*
+     * 验证验证码
+     * */
+    @Override
+    public void verifyEmail(String code, Integer mode,String emailOrPassword) {
+     //从redis当中取出对应验证码
+     String redisCode = (String) redisTemplate.opsForValue().get(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId());
+     if (redisCode == null) {
+         throw new EmailException("请先发送验证码");
+     }
+     //MessageDigest.isEqual(),防止验证码被猜测
+     if (MessageDigest.isEqual(code.getBytes(), redisCode.getBytes())) {
+         throw new EmailException("验证码错误,请重新输入");
+     }
+     User user = this.getById(BaseContext.getCurrentId());
+
+     if(Objects.equals(mode, EmailEnum.ACTIVATION_EMAIL.getCode())){
+         //激活邮箱
+          user.setEmail(emailOrPassword);
+          this.updateById(user);
+         redisTemplate.delete(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId());
+         log.info("邮箱绑定成功");
+         return;
+     }
+    else if(Objects.equals(mode, EmailEnum.RESET_PASSWORD_EMAIL.getCode())){
+         //重置密码
+         String encode = passwordEncoder.encode(emailOrPassword);
+         user.setPassword(encode);
+         this.updateById(user);
+         redisTemplate.delete(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId());
+         log.info("密码重置成功");
+         return;
+     }
+     else{
+         throw new EmailException("验证码错误,请重新输入");
+     }
     }
 
     private String getCode() {

@@ -1,7 +1,6 @@
 package ai.weixiu.controller;
 
 
-import ai.weixiu.entity.User;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.pojo.dto.UserLoginDTO;
@@ -98,6 +97,15 @@ public class UserController {
     @Operation(summary = "向邮箱发送验证码")
     public Result sendEmail(String email,Integer mode) {
         userService.sendEmail(email, mode);
+        return Result.success();
+    }
+    /*
+    * 验证验证码,并修改密码或绑定邮箱
+    * */
+    @PostMapping("/verifyEmail")
+    @Operation(summary = "验证验证码")
+    public Result verifyEmail(String code,Integer mode,String  emailOrPassword) {
+        userService.verifyEmail(code, mode,emailOrPassword);
         return Result.success();
     }
 }
