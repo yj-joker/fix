@@ -10,7 +10,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * WebMvc 配置类
  * 配置跨域和拦截器
  */
-//@Configuration
+@Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final SessionInterceptor sessionInterceptor;
@@ -33,6 +33,6 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(sessionInterceptor)
                 .addPathPatterns("/**")
-                .excludePathPatterns("/**/login", "/**/register");
+                .excludePathPatterns("/weixiu/user/login", "/weixiu/user/register");
     }
 }

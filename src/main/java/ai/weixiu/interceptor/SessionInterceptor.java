@@ -10,13 +10,14 @@ import jakarta.servlet.http.HttpSession;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
-//@Component
+@Component
 public class SessionInterceptor implements HandlerInterceptor {
     private final RedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;

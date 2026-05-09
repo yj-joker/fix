@@ -55,3 +55,10 @@ logging:
   level:
     org.neo4j.ogm: DEBUG              # 打印 OGM 生成的 Cypher
     org.springframework.data.neo4j: DEBUG
+aliyun:
+  oss:
+    region: cn-beijing
+    bucket: yjjokerbucket
+    access-key-id: LTAI5tG7fKiGCMaGwDmYGzTV
+    access-key-secret: fzCpMr3FJDbO7KomwEY6kbzKhvy1b7
+

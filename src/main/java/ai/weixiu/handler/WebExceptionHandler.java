@@ -39,4 +39,9 @@ public class WebExceptionHandler {
         log.info(e.getMessage());
         return Result.error("400", e.getMessage());
     }
+    @ExceptionHandler(AiMemoryException.class)
+    public Result handler(AiMemoryException e) {
+        log.info(e.getMessage());
+        return Result.error("400", e.getMessage());
+    }
 }

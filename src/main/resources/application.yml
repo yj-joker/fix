@@ -6,6 +6,13 @@ spring:
     port: ${SMTP_PORT}
     username: ${SMTP_USER}
     password: ${SMTP_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
   application:
     name: weixiu
   servlet:
@@ -51,3 +58,10 @@ logging:
   level:
     org.neo4j.ogm: DEBUG              # 打印 OGM 生成的 Cypher
     org.springframework.data.neo4j: DEBUG
+aliyun:
+  oss:
+    region: ${OSS_REGION}
+    bucket: ${OSS_BUCKET}
+    access-key-id: ${OSS_ACCESS_KEY_ID}
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET}
+

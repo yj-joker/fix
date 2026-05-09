@@ -7,6 +7,7 @@ import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
+import ai.weixiu.utils.UpLoadUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -32,6 +34,7 @@ import java.util.List;
 @Tag(name = "用户管理")
 public class UserController {
     private final UserService userService;
+    private final UpLoadUtils upLoadUtils;
 
     /*
      * 用户注册
@@ -107,5 +110,19 @@ public class UserController {
     public Result verifyEmail(String code,Integer mode,String  emailOrPassword) {
         userService.verifyEmail(code, mode,emailOrPassword);
         return Result.success();
+    }
+    /*
+    * 上传图片
+    * */
+    @PostMapping("/upload")
+    @Operation(summary = "上传图片")
+    public Result upload(MultipartFile file) {
+        String url;
+        try {
+             url = upLoadUtils.upload(file);
+        } catch (IOException ignored) {
+            return Result.error("500","上传图片失败,请稍后再试");
+        }
+        return Result.success(url);
     }
 }
