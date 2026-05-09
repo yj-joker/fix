@@ -39,9 +39,10 @@ public class AiServiceImpl implements AiService {
     @Override
     @Transactional
     public Flux<String> chat(AiChatRequest aiChatRequest) {
-//        if (havePicture(aiChatRequest.getFile())) {
-//
-//        }
+        String uri = "/ai/chat/stream";
+        if (aiChatRequest.getUrl()!=null) {
+         //含有图片
+        }
         Long userId = BaseContext.getCurrentId();
         LocalDateTime now = LocalDateTime.now();
         //查找当前会话记忆
@@ -77,11 +78,12 @@ public class AiServiceImpl implements AiService {
             aiSessionService.updateById(aiSession);
         }
         // 组合历史消息
+        memoryMessages.add(new MemoryMessage("user", aiChatRequest.getUserMessage()));
         String finalUserMessage = JSONUtil.toJsonStr(memoryMessages);
         aiChatRequest.setUserMessage(finalUserMessage);
-        log.info("最终消息: {}",JSONUtil.toJsonStr(aiChatRequest));
+        log.info("最终消息: {}",aiChatRequest.getUserMessage() );
         Flux<String> flux = webClient.post()
-                .uri("/ai/chat/stream")
+                .uri(uri)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(aiChatRequest)

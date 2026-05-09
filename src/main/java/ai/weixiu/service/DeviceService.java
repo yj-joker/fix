@@ -1,7 +1,10 @@
 package ai.weixiu.service;
 
 import ai.weixiu.entity.Device;
+import ai.weixiu.entity.Fault;
 import ai.weixiu.pojo.dto.DeviceDTO;
+import ai.weixiu.pojo.query.DeviceQuery;
+import ai.weixiu.pojo.vo.DeviceOverviewVO;
 
 import java.util.List;
 import java.util.Optional;
@@ -33,4 +36,8 @@ public interface DeviceService {
      */
     Device update(DeviceDTO deviceDTO);
 
+    /*
+    * 返回设备信息和部件故障总数
+    * */
+    DeviceOverviewVO getDeviceOverview(String id);
 }

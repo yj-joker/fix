@@ -45,9 +45,11 @@ public class Device {
     @Builder.Default
     private Set<Component> ownedComponents = new HashSet<>();
 
-    // 关系 设备发生的故障（多对多）
-    // direction = Relationship.Direction.OUTGOING 表示：设备 --[HAS_FAULT]--> 故障
-    @Relationship(type = "HAS_FAULT", direction = Relationship.Direction.OUTGOING)
-    @Builder.Default
-    private Set<Fault> faults = new HashSet<>();
+    /*
+     关系 设备发生的故障（多对多）
+     direction = Relationship.Direction.OUTGOING 表示：设备 --[HAS_FAULT]--> 故障
+        @Relationship(type = "HAS_FAULT", direction = Relationship.Direction.OUTGOING)
+        @Builder.Default
+        private Set<Fault> faults = new HashSet<>();
+    */
 }

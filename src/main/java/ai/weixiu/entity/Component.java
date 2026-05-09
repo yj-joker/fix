@@ -39,12 +39,14 @@ public class Component {
     @Property("unit_price")//单价
     private Double unitPrice;
 
-    // 关系 被哪些设备拥有（多对多，反向声明）
-    // direction = Relationship.Direction.INCOMING 表示：设备 --[OWNS]--> 部件
-    // 这条关系的源是 Device，所以 Component 这边是 INCOMING
-    @Relationship(type = "OWNS", direction = Relationship.Direction.INCOMING)
-    @Builder.Default
-    private Set<Device> usedByDevices = new HashSet<>();
+    /*
+     关系 被哪些设备拥有（多对多，反向声明）
+     direction = Relationship.Direction.INCOMING 表示：设备 --[OWNS]--> 部件
+     这条关系的源是 Device，所以 Component 这边是 INCOMING
+        @Relationship(type = "OWNS", direction = Relationship.Direction.INCOMING)
+        @Builder.Default
+        private Set<Device> usedByDevices = new HashSet<>();
+    */
 
     // 【关系】可能引发哪些故障（多对多，部件 --> 故障）
     // 一个部件可以引发多种故障

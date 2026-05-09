@@ -1,12 +1,16 @@
 package ai.weixiu.service.impl;
 
 import ai.weixiu.entity.Device;
+import ai.weixiu.entity.Fault;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.pojo.dto.DeviceDTO;
+import ai.weixiu.pojo.query.DeviceQuery;
+import ai.weixiu.pojo.vo.DeviceOverviewVO;
 import ai.weixiu.repository.DeviceRepository;
 import ai.weixiu.service.DeviceService;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +23,7 @@ import java.util.UUID;
 public class DeviceServiceImpl implements DeviceService {
 
     private final DeviceRepository deviceRepository;
+    private final Neo4jClient neo4jClient;
     private final String notFoundMessage = "设备不存在";
 
     @Override
@@ -56,9 +61,17 @@ public class DeviceServiceImpl implements DeviceService {
         return deviceRepository.save(device);
     }
 
+    @Override
+    public DeviceOverviewVO getDeviceOverview(String deviceId) {
+        Optional<DeviceOverviewVO> deviceOverview = deviceRepository.getDeviceOverview(deviceId);
+        return deviceOverview.orElse(null);
+
+    }
+
     protected Device toEntity(DeviceDTO deviceDTO) {
         Device device = new Device();
         BeanUtils.copyProperties(deviceDTO, device);
         return device;
     }
+
 }

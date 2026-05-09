@@ -43,9 +43,9 @@ public class Fault {
     private String reportedBy;
 
     // 关系 涉及哪些部件（多对多，部件 --> 故障，故障端是 INCOMING）
-    @Relationship(type = "CAUSES", direction = Relationship.Direction.INCOMING)
-    @Builder.Default
-    private Set<Component> involvedComponents = new HashSet<>();
+//    @Relationship(type = "CAUSES", direction = Relationship.Direction.INCOMING)
+//    @Builder.Default
+//    private Set<Component> involvedComponents = new HashSet<>();
 
     // 关系 有哪些解决方案（故障 --> 解决方案）
     @Relationship(type = "HAS_SOLUTION", direction = Relationship.Direction.OUTGOING)
@@ -53,9 +53,9 @@ public class Fault {
     private Set<Solution> solutions = new HashSet<>();
 
     // 关系 被哪些案例记录（多对多，故障 --> 案例，故障端是 INCOMING）
-    @Relationship(type = "RECORDED_BY", direction = Relationship.Direction.INCOMING)
-    @Builder.Default
-    private Set<CaseRecord> caseRecords = new HashSet<>();
+//    @Relationship(type = "RECORDED_BY", direction = Relationship.Direction.INCOMING)
+//    @Builder.Default
+//    private Set<CaseRecord> caseRecords = new HashSet<>();
 
     // 关系 发生在哪个设备上（故障 --> 设备，故障端是 OUTGOING）
     @Relationship(type = "OCCURS_ON", direction = Relationship.Direction.OUTGOING)

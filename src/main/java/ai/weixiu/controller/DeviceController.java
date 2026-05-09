@@ -1,8 +1,11 @@
 package ai.weixiu.controller;
 
 import ai.weixiu.entity.Device;
+import ai.weixiu.entity.Fault;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.DeviceDTO;
+import ai.weixiu.pojo.query.DeviceQuery;
+import ai.weixiu.pojo.vo.DeviceOverviewVO;
 import ai.weixiu.service.DeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,12 +28,6 @@ public class DeviceController {
         return Result.success(deviceService.save(deviceDTO));
     }
 
-    @GetMapping("/{id}")
-    @Operation(summary = "根据 ID 查询设备")
-    public Result<Device> findById(@PathVariable String id) {
-        return Result.success(deviceService.findById(id).get());
-    }
-
     @GetMapping("/list")
     @Operation(summary = "查询所有设备")
     public Result<List<Device>> findAll() {
@@ -49,4 +46,10 @@ public class DeviceController {
     public Result<Device> update(@RequestBody DeviceDTO deviceDTO) {
         return Result.success(deviceService.update(deviceDTO));
     }
+    @GetMapping("/{id}")
+    @Operation(summary = "根据 ID 查询设备概览")
+    public Result<DeviceOverviewVO> findById(@PathVariable String id) {
+        return Result.success(deviceService.getDeviceOverview(id));
+    }
+
 }

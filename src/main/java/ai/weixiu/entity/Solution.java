@@ -47,7 +47,7 @@ public class Solution {
 
     // 关系 适用于哪些故障（多对多，反向声明，故障端是 OUTGOING）
     // Solution 这边是 INCOMING：故障 --[HAS_SOLUTION]--> 解决方案
-    @Relationship(type = "HAS_SOLUTION", direction = Relationship.Direction.INCOMING)
-    @Builder.Default
-    private Set<Fault> applicableFaults = new HashSet<>();
+//    @Relationship(type = "HAS_SOLUTION", direction = Relationship.Direction.INCOMING)
+//    @Builder.Default
+//    private Set<Fault> applicableFaults = new HashSet<>();
 }
