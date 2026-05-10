@@ -3,8 +3,10 @@ package ai.weixiu.service.impl;
 import ai.weixiu.entity.Device;
 import ai.weixiu.entity.Fault;
 import ai.weixiu.exceprion.NotFoundException;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.DeviceDTO;
 import ai.weixiu.pojo.query.DeviceQuery;
+import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.DeviceOverviewVO;
 import ai.weixiu.repository.DeviceRepository;
 import ai.weixiu.service.DeviceService;
@@ -61,11 +63,38 @@ public class DeviceServiceImpl implements DeviceService {
         return deviceRepository.save(device);
     }
 
+    /*
+     * 获取设备概览信息
+     * */
     @Override
     public DeviceOverviewVO getDeviceOverview(String deviceId) {
         Optional<DeviceOverviewVO> deviceOverview = deviceRepository.getDeviceOverview(deviceId);
         return deviceOverview.orElse(null);
 
+    }
+
+    /*
+     * 分页查询部件
+     * */
+    @Override
+    public PageResult<ComponentVO> getComponents(DeviceQuery deviceQuery) {
+        int skip = deviceQuery.getPage() * deviceQuery.getSize();
+        List<ComponentVO> records = deviceRepository.getComponentRecords(
+            deviceQuery.getDeviceId(),
+            deviceQuery.getComponentName(),
+            skip,
+            deviceQuery.getSize()
+        );
+        Long total = deviceRepository.getComponentTotal(
+            deviceQuery.getDeviceId(),
+            deviceQuery.getComponentName()
+        );
+        PageResult<ComponentVO> result = new PageResult<>();
+        result.setRecords(records);
+        result.setTotal(total);
+        result.setPage(deviceQuery.getPage());
+        result.setSize(deviceQuery.getSize());
+        return result;
     }
 
     protected Device toEntity(DeviceDTO deviceDTO) {

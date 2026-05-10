@@ -7,5 +7,5 @@ import lombok.EqualsAndHashCode;
 @Data
 public class DeviceQuery extends PageQuery{
     private String deviceId;
-    private String faultName;
+    private String componentName;
 }
