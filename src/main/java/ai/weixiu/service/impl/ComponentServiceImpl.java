@@ -2,7 +2,10 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.entity.Component;
 import ai.weixiu.exceprion.NotFoundException;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.ComponentDTO;
+import ai.weixiu.pojo.query.ComponentQuery;
+import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.repository.ComponentRepository;
 import ai.weixiu.service.ComponentService;
 import lombok.AllArgsConstructor;
@@ -54,6 +57,29 @@ public class ComponentServiceImpl implements ComponentService {
     public Component update(ComponentDTO componentDTO) {
         Component component = toEntity(componentDTO);
         return componentRepository.save(component);
+    }
+    /*
+    * 分页查询部件的故障列表
+    * */
+    @Override
+    public PageResult<FaultVO> getComponentFaults(ComponentQuery componentQuery) {
+        int skip = componentQuery.getPage() * componentQuery.getSize();
+        List<FaultVO> records = componentRepository.getFaultRecords(
+            componentQuery.getComponentId(),
+            componentQuery.getFaultName(),
+            skip,
+            componentQuery.getSize()
+        );
+        Long total = componentRepository.getFaultTotal(
+            componentQuery.getComponentId(),
+            componentQuery.getFaultName()
+        );
+        PageResult<FaultVO> result = new PageResult<>();
+        result.setRecords(records);
+        result.setTotal(total);
+        result.setPage(componentQuery.getPage());
+        result.setSize(componentQuery.getSize());
+        return result;
     }
 
     protected Component toEntity(ComponentDTO componentDTO) {

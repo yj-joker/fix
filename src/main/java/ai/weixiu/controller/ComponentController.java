@@ -1,8 +1,11 @@
 package ai.weixiu.controller;
 
 import ai.weixiu.entity.Component;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.ComponentDTO;
+import ai.weixiu.pojo.query.ComponentQuery;
+import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.service.ComponentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -48,5 +51,10 @@ public class ComponentController {
     @Operation(summary = "更新部件信息")
     public Result<Component> update(@RequestBody ComponentDTO componentDTO) {
         return Result.success(componentService.update(componentDTO));
+    }
+    @GetMapping("/faults")
+    @Operation(summary = "查询部件的故障")
+    public Result<PageResult<FaultVO>> getComponentFaults(@RequestBody ComponentQuery componentQuery) {
+        return Result.success(componentService.getComponentFaults(componentQuery));
     }
 }

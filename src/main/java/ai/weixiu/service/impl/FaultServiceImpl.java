@@ -2,7 +2,10 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.entity.Fault;
 import ai.weixiu.exceprion.NotFoundException;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.FaultDTO;
+import ai.weixiu.pojo.query.FaultQuery;
+import ai.weixiu.pojo.vo.SolutionVO;
 import ai.weixiu.repository.FaultRepository;
 import ai.weixiu.service.FaultService;
 import lombok.AllArgsConstructor;
@@ -56,6 +59,33 @@ public class FaultServiceImpl implements FaultService {
         return faultRepository.save(fault);
     }
 
+    /*
+    * 分页查询故障的解决方案列表
+    * */
+    @Override
+    public PageResult<SolutionVO> getSolutions(FaultQuery faultQuery) {
+        int skip = faultQuery.getPage() * faultQuery.getSize();
+        List<SolutionVO> records = faultRepository.getSolutionRecords(
+            faultQuery.getFaultId(),
+            faultQuery.getSolutionTitle(),
+            skip,
+            faultQuery.getSize()
+        );
+        Long total = faultRepository.getSolutionTotal(
+            faultQuery.getFaultId(),
+            faultQuery.getSolutionTitle()
+        );
+        PageResult<SolutionVO> result = new PageResult<>();
+        result.setRecords(records);
+        result.setTotal(total);
+        result.setPage(faultQuery.getPage());
+        result.setSize(faultQuery.getSize());
+        return result;
+    }
+
+    /**
+     * 将 DTO 转换为实体
+     */
     protected Fault toEntity(FaultDTO faultDTO) {
         Fault fault = new Fault();
         BeanUtils.copyProperties(faultDTO, fault);

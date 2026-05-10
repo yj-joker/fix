@@ -1,8 +1,11 @@
 package ai.weixiu.controller;
 
 import ai.weixiu.entity.Fault;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.FaultDTO;
+import ai.weixiu.pojo.query.FaultQuery;
+import ai.weixiu.pojo.vo.SolutionVO;
 import ai.weixiu.service.FaultService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -48,5 +51,11 @@ public class FaultController {
     @Operation(summary = "更新故障信息")
     public Result<Fault> update(@RequestBody FaultDTO faultDTO) {
         return Result.success(faultService.update(faultDTO));
+    }
+
+    @GetMapping("/solutions")
+    @Operation(summary = "分页查询故障的解决方案列表")
+    public Result<PageResult<SolutionVO>> getSolutions(@RequestBody FaultQuery faultQuery) {
+        return Result.success(faultService.getSolutions(faultQuery));
     }
 }

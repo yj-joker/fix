@@ -1,7 +1,10 @@
 package ai.weixiu.service;
 
 import ai.weixiu.entity.Fault;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.FaultDTO;
+import ai.weixiu.pojo.query.FaultQuery;
+import ai.weixiu.pojo.vo.SolutionVO;
 
 import java.util.List;
 import java.util.Optional;
@@ -32,5 +35,10 @@ public interface FaultService {
      * 更新故障信息
      */
     Fault update(FaultDTO faultDTO);
+
+    /**
+     * 分页查询故障的解决方案列表
+     */
+    PageResult<SolutionVO> getSolutions(FaultQuery faultQuery);
 
 }

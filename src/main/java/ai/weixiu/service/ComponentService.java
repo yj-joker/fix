@@ -1,7 +1,10 @@
 package ai.weixiu.service;
 
 import ai.weixiu.entity.Component;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.ComponentDTO;
+import ai.weixiu.pojo.query.ComponentQuery;
+import ai.weixiu.pojo.vo.FaultVO;
 
 import java.util.List;
 import java.util.Optional;
@@ -33,4 +36,8 @@ public interface ComponentService {
      */
     Component update(ComponentDTO componentDTO);
 
+    /*
+    * 分页查询部件的故障列表
+    * */
+    PageResult<FaultVO> getComponentFaults(ComponentQuery componentQuery);
 }
