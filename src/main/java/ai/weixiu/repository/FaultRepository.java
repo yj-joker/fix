@@ -1,6 +1,7 @@
 package ai.weixiu.repository;
 
 import ai.weixiu.entity.Fault;
+import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.pojo.vo.SolutionVO;
 import org.springframework.data.neo4j.repository.Neo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
@@ -50,4 +51,25 @@ public interface FaultRepository extends Neo4jRepository<Fault, String> {
         @Param("faultId") String faultId,
         @Param("solutionTitle") String solutionTitle
     );
+    /*
+    * 根据用户描述向量返回最接近的故障
+    * */
+    @Query(""" 
+CALL db.index.vector.queryNodes('fault_embedding_index', $limit, $embedding)
+YIELD node AS f, score
+WHERE score >= $minScore
+RETURN f.id AS id,
+       f.name AS name,
+       f.description AS description,
+       f.category AS category,
+       f.severity AS severity,
+       score
+ORDER BY score DESC
+            """)
+    List<FaultVO> getFaultsByEmbedding(
+        @Param("embedding") List<Double> embedding,
+        @Param("limit") long limit, // 返回数量
+        @Param("minScore") double minScore // 最小分数
+    );
+
 }

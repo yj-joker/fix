@@ -4,6 +4,7 @@ import ai.weixiu.entity.Fault;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.FaultDTO;
 import ai.weixiu.pojo.query.FaultQuery;
+import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.pojo.vo.SolutionVO;
 
 import java.util.List;
@@ -41,4 +42,8 @@ public interface FaultService {
      */
     PageResult<SolutionVO> getSolutions(FaultQuery faultQuery);
 
+    /*
+    * 根据用户描述返回最匹配的故障id
+    * */
+    List<FaultVO> getFaultByEmbedding(String description, Long limit, Double minScore);
 }

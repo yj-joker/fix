@@ -4,6 +4,8 @@ import lombok.Data;
 
 @Data
 public class DiagnosisPathVO {
+    private String deviceId;
+    private String deviceName;
     private String componentId;
     private String componentName;
 

@@ -9,6 +9,7 @@ import org.springframework.data.neo4j.core.support.UUIDStringGenerator;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Data
@@ -41,6 +42,9 @@ public class Fault {
 
     @Property("reported_by")//报告人
     private String reportedBy;
+
+    @Property("embedding")//维修向量
+    private List<Double> embedding;
 
     // 关系 涉及哪些部件（多对多，部件 --> 故障，故障端是 INCOMING）
 //    @Relationship(type = "CAUSES", direction = Relationship.Direction.INCOMING)
