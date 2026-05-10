@@ -5,8 +5,10 @@ import ai.weixiu.entity.Fault;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.DeviceDTO;
 import ai.weixiu.pojo.query.DeviceQuery;
+import ai.weixiu.pojo.query.DiagnosisPathQuery;
 import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.DeviceOverviewVO;
+import ai.weixiu.pojo.vo.DeviceVO;
 
 import java.util.List;
 import java.util.Optional;
@@ -46,4 +48,8 @@ public interface DeviceService {
     * 分页查询部件
     * */
     PageResult<ComponentVO> getComponents(DeviceQuery deviceQuery);
+    /*
+    * 分页查询设备总数和信息
+    * */
+    PageResult<DeviceVO> getDeviceList(DiagnosisPathQuery diagnosisPathQuery);
 }

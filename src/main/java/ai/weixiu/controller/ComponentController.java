@@ -12,8 +12,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/weixiu/component")
 @AllArgsConstructor
@@ -32,12 +30,6 @@ public class ComponentController {
     @Operation(summary = "根据 ID 查询部件")
     public Result<Component> findById(@PathVariable String id) {
         return Result.success(componentService.findById(id).get());
-    }
-
-    @GetMapping("/list")
-    @Operation(summary = "查询所有部件")
-    public Result<List<Component>> findAll() {
-        return Result.success(componentService.findAll());
     }
 
     @DeleteMapping("/{id}")

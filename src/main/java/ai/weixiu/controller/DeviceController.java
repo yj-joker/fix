@@ -14,8 +14,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/weixiu/device")
 @AllArgsConstructor
@@ -28,12 +26,6 @@ public class DeviceController {
     @Operation(summary = "新增设备")
     public Result<Device> save(@RequestBody DeviceDTO deviceDTO) {
         return Result.success(deviceService.save(deviceDTO));
-    }
-
-    @GetMapping("/list")
-    @Operation(summary = "查询所有设备")
-    public Result<List<Device>> findAll() {
-        return Result.success(deviceService.findAll());
     }
 
     @DeleteMapping("/{id}")

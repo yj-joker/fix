@@ -9,8 +9,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/weixiu/solution")
 @AllArgsConstructor
@@ -29,12 +27,6 @@ public class SolutionController {
     @Operation(summary = "根据 ID 查询解决方案")
     public Result<Solution> findById(@PathVariable String id) {
         return Result.success(solutionService.findById(id).get());
-    }
-
-    @GetMapping("/list")
-    @Operation(summary = "查询所有解决方案")
-    public Result<List<Solution>> findAll() {
-        return Result.success(solutionService.findAll());
     }
 
     @DeleteMapping("/{id}")

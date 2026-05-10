@@ -12,8 +12,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/weixiu/fault")
 @AllArgsConstructor
@@ -32,12 +30,6 @@ public class FaultController {
     @Operation(summary = "根据 ID 查询故障")
     public Result<Fault> findById(@PathVariable String id) {
         return Result.success(faultService.findById(id).get());
-    }
-
-    @GetMapping("/list")
-    @Operation(summary = "查询所有故障")
-    public Result<List<Fault>> findAll() {
-        return Result.success(faultService.findAll());
     }
 
     @DeleteMapping("/{id}")

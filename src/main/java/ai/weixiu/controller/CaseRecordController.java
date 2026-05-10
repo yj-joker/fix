@@ -9,8 +9,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/weixiu/case-record")
 @AllArgsConstructor
@@ -29,12 +27,6 @@ public class CaseRecordController {
     @Operation(summary = "根据 ID 查询案例记录")
     public Result<CaseRecord> findById(@PathVariable String id) {
         return Result.success(caseRecordService.findById(id).get());
-    }
-
-    @GetMapping("/list")
-    @Operation(summary = "查询所有案例记录")
-    public Result<List<CaseRecord>> findAll() {
-        return Result.success(caseRecordService.findAll());
     }
 
     @DeleteMapping("/{id}")

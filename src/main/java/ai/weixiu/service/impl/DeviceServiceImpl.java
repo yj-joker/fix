@@ -6,8 +6,10 @@ import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.DeviceDTO;
 import ai.weixiu.pojo.query.DeviceQuery;
+import ai.weixiu.pojo.query.DiagnosisPathQuery;
 import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.DeviceOverviewVO;
+import ai.weixiu.pojo.vo.DeviceVO;
 import ai.weixiu.repository.DeviceRepository;
 import ai.weixiu.service.DeviceService;
 import lombok.AllArgsConstructor;
@@ -94,6 +96,24 @@ public class DeviceServiceImpl implements DeviceService {
         result.setTotal(total);
         result.setPage(deviceQuery.getPage());
         result.setSize(deviceQuery.getSize());
+        return result;
+    }
+
+    /*
+    * 分页查询设备总数和详细信息
+    * */
+
+    @Override
+    public PageResult<DeviceVO> getDeviceList(DiagnosisPathQuery diagnosisPathQuery) {
+        int skip = diagnosisPathQuery.getPage() * diagnosisPathQuery.getSize();
+        List<DeviceVO> records = deviceRepository.getDevices(diagnosisPathQuery.getKeyWord(),
+                 skip, diagnosisPathQuery.getSize());
+        Long total = deviceRepository.getDeviceTotal(diagnosisPathQuery.getKeyWord());
+        PageResult<DeviceVO> result = new PageResult<>();
+        result.setRecords(records);
+        result.setTotal(total);
+        result.setPage(diagnosisPathQuery.getPage());
+        result.setSize(diagnosisPathQuery.getSize());
         return result;
     }
 
