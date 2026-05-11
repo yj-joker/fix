@@ -4,6 +4,7 @@ import ai.weixiu.entity.Component;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.ComponentDTO;
 import ai.weixiu.pojo.query.ComponentQuery;
+import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.FaultVO;
 
 import java.util.List;
@@ -40,4 +41,8 @@ public interface ComponentService {
     * 分页查询部件的故障列表
     * */
     PageResult<FaultVO> getComponentFaults(ComponentQuery componentQuery);
+    /*
+    * embedding查询部件
+    * */
+    List<ComponentVO> getComponentByEmbedding(String description, Long limit, Double minScore);
 }

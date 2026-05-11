@@ -8,5 +8,5 @@ public interface GraphQueryService {
     /**
      * 分页查询诊断路径
      */
-    PageResult<DiagnosisPathVO> findDiagnosisPaths(String keyword, String faultDescription, int page, int size);
+    PageResult<DiagnosisPathVO> findDiagnosisPaths(String keyword,String ComponentDescription ,String faultDescription, int page, int size);
 }

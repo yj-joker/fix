@@ -10,7 +10,8 @@
       "Bash(python -c ' *)",
       "WebSearch",
       "WebFetch(domain:help.aliyun.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "mcp__MiniMax__understand_image"
     ]
   }
 }

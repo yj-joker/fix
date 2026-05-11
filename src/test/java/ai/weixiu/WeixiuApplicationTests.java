@@ -7,7 +7,6 @@ import ai.weixiu.service.GraphQueryService;
 import ai.weixiu.utils.BuildStringUtils;
 import ai.weixiu.utils.ExcelUtils;
 import com.alibaba.excel.EasyExcel;
-import lombok.AllArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,7 +31,7 @@ private  GraphQueryService graphQueryService;
         ragResultVO.setDeviceKeyword("发动机");
         ragResultVO.setMatchedFaults(new ArrayList<>());
         List<DiagnosisPathVO> records = graphQueryService.findDiagnosisPaths("发动机",
-                "发动机损坏", 1, 10).getRecords();
+                "", "发动机损坏",1, 10).getRecords();
         ragResultVO.setDiagnosisPaths(records);
         ragResultVO.setContext(buildStringUtils.buildGraphContextAssembler(ragResultVO));
         System.out.println(ragResultVO.getContext());

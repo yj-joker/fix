@@ -19,5 +19,6 @@ public class DiagnosisPathVO {
     private Boolean verified; // 是否经过验证
 
     private String pathText; // 诊断路径文本
-    private Double faultScore; // 故障得分
+    private Double faultScore; // 故障分数
+    private Double componentScore; // 部件分数
 }

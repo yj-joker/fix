@@ -9,6 +9,7 @@ import org.springframework.data.neo4j.core.schema.*;
 import org.springframework.data.neo4j.core.support.UUIDStringGenerator;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Builder
@@ -38,6 +39,9 @@ public class Component {
 
     @Property("unit_price")//单价
     private Double unitPrice;
+
+    @Property("embedding")
+    private List<Double> embedding;
 
     /*
      关系 被哪些设备拥有（多对多，反向声明）

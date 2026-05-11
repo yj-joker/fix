@@ -11,4 +11,5 @@ public class ComponentVO {
     private String supplier;
     private String lifecycle;
     private Double unitPrice;
+    private Double score;
 }

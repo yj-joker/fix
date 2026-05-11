@@ -21,9 +21,10 @@ public class PathController {
     @Operation(summary = "分页获取诊断路径,一次获取10个")
     public Result<PageResult<DiagnosisPathVO>> getDiagnosisPaths(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String faultName,
+            @RequestParam(required = false) String componentDescription,
+            @RequestParam(required = false) String faultDescription,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return Result.success(graphQueryService.findDiagnosisPaths(keyword, faultName, page, size));
+        return Result.success(graphQueryService.findDiagnosisPaths(keyword,componentDescription, faultDescription, page, size));
     }
 }

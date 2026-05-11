@@ -5,9 +5,12 @@ import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.ComponentDTO;
 import ai.weixiu.pojo.query.ComponentQuery;
+import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.repository.ComponentRepository;
 import ai.weixiu.service.ComponentService;
+import ai.weixiu.utils.BuildStringUtils;
+import ai.weixiu.utils.EmbeddingUtils;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -22,21 +25,26 @@ import java.util.UUID;
 public class ComponentServiceImpl implements ComponentService {
 
     private final ComponentRepository componentRepository;
-    private final String notFoundMessage = "部件不存在";
+    private final BuildStringUtils buildStringUtils;
+    private final EmbeddingUtils embeddingUtils;
 
     @Override
     @Transactional
     public Component save(ComponentDTO componentDTO) {
         Component component = toEntity(componentDTO);
         component.setId(UUID.randomUUID().toString());
+        List<Double> embedding = getEmbedding(component);
+        component.setEmbedding(embedding);
         return componentRepository.save(component);
     }
+
+
 
     @Override
     public Optional<Component> findById(String id) {
         Optional<Component> component = componentRepository.findById(id);
-        if (!component.isPresent()) {
-            throw new NotFoundException(notFoundMessage);
+        if (component.isEmpty()) {
+            throw new NotFoundException( "部件不存在");
         }
         return component;
     }
@@ -56,6 +64,8 @@ public class ComponentServiceImpl implements ComponentService {
     @Transactional
     public Component update(ComponentDTO componentDTO) {
         Component component = toEntity(componentDTO);
+        List<Double> embedding = getEmbedding(component);
+        component.setEmbedding(embedding);
         return componentRepository.save(component);
     }
     /*
@@ -82,6 +92,20 @@ public class ComponentServiceImpl implements ComponentService {
         return result;
     }
 
+    /*
+    * embedding查询部件
+    * */
+
+    @Override
+    public List<ComponentVO> getComponentByEmbedding(String description, Long limit, Double minScore) {
+        List<Double> embedding = embeddingUtils.getEmbedding(description);
+        return componentRepository.getComponentByEmbedding(embedding, limit, minScore);
+    }
+
+    private List<Double> getEmbedding(Component component) {
+        String textToEmbed = buildStringUtils.buildComponentEmbeddingText(component);
+        return embeddingUtils.getEmbedding(textToEmbed);
+    }
     protected Component toEntity(ComponentDTO componentDTO) {
         Component component = new Component();
         BeanUtils.copyProperties(componentDTO, component);
