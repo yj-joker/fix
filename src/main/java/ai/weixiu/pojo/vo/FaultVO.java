@@ -14,4 +14,5 @@ public class FaultVO {
     private String category;
     private LocalDateTime occurrenceTime;
     private String reportedBy;
+    private Double score;
 }

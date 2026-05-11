@@ -4,17 +4,20 @@ import lombok.Data;
 
 @Data
 public class DiagnosisPathVO {
-    private String deviceId;
-    private String deviceName;
-    private String componentId;
-    private String componentName;
+    private String deviceId; // 设备ID
+    private String deviceName; // 设备名称
+    private String componentId; // 部件ID
+    private String componentName; // 部件名称
 
-    private String faultId;
-    private String faultName;
-    private String faultSeverity;
+    private String faultId; // 故障ID
+    private String faultName; // 故障名称
+    private String faultSeverity; // 故障等级
 
-    private String solutionId;
-    private String solutionTitle;
-    private Integer estimatedTime;
-    private Boolean verified;
+    private String solutionId; // 解决方案ID
+    private String solutionTitle; // 解决方案标题
+    private Integer estimatedTime; // 预计解决时间
+    private Boolean verified; // 是否经过验证
+
+    private String pathText; // 诊断路径文本
+    private Double faultScore; // 故障得分
 }

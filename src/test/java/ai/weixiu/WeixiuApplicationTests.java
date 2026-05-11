@@ -1,9 +1,15 @@
 package ai.weixiu;
 
+import ai.weixiu.entity.GraphRagResultVO;
 import ai.weixiu.entity.User;
+import ai.weixiu.pojo.vo.DiagnosisPathVO;
+import ai.weixiu.service.GraphQueryService;
+import ai.weixiu.utils.BuildStringUtils;
 import ai.weixiu.utils.ExcelUtils;
 import com.alibaba.excel.EasyExcel;
+import lombok.AllArgsConstructor;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,9 +22,23 @@ import java.util.List;
 
 @SpringBootTest
 class WeixiuApplicationTests {
-
+private final BuildStringUtils buildStringUtils=new BuildStringUtils();
+@Autowired
+private  GraphQueryService graphQueryService;
     @Test
     void contextLoads() {
+        GraphRagResultVO ragResultVO = new GraphRagResultVO();
+        ragResultVO.setQuestion("发动机损坏了怎么办");
+        ragResultVO.setDeviceKeyword("发动机");
+        ragResultVO.setMatchedFaults(new ArrayList<>());
+        List<DiagnosisPathVO> records = graphQueryService.findDiagnosisPaths("发动机",
+                "发动机损坏", 1, 10).getRecords();
+        ragResultVO.setDiagnosisPaths(records);
+        ragResultVO.setContext(buildStringUtils.buildGraphContextAssembler(ragResultVO));
+        System.out.println(ragResultVO.getContext());
+    }
+    @Test
+    public void testRag(){
 
     }
     @Test

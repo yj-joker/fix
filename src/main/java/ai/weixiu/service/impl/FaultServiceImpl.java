@@ -26,6 +26,7 @@ public class FaultServiceImpl implements FaultService {
     private final FaultRepository faultRepository;
     private final String notFoundMessage = "故障不存在";
     private final EmbeddingUtils embeddingUtils;
+    private final BuildStringUtils buildStringUtils;
     /*
     * 新增故障实体
     * */
@@ -116,7 +117,7 @@ public class FaultServiceImpl implements FaultService {
     * 获取embedding
     * */
     private @NonNull List<Double> getEmbedding(Fault fault) {
-        String textToEmbed = BuildStringUtils.buildFaultEmbeddingText(fault);
+        String textToEmbed = buildStringUtils.buildFaultEmbeddingText(fault);
         return embeddingUtils.getEmbedding(textToEmbed);
     }
 }
