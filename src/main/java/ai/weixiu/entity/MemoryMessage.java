@@ -8,6 +8,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class MemoryMessage {
-    private String role;
-    private String content;
+    private String role; // 角色
+    private String content; // 内容
 }

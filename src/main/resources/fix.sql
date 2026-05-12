@@ -52,3 +52,42 @@ CREATE TABLE ai_message (
                             INDEX idx_session_round (ai_session_id, round_no),
                             INDEX idx_session_created (ai_session_id, created_at)
 );
+CREATE TABLE memory_fact (
+                             id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+                             session_id      VARCHAR(64)  NOT NULL COMMENT '会话ID',
+                             fact_id         VARCHAR(128) NOT NULL UNIQUE COMMENT '向量库doc_id，用于supersede引用',
+                             content         TEXT         NOT NULL COMMENT '事实内容',
+                             keywords        VARCHAR(500) DEFAULT '' COMMENT '检索关键词',
+                             source_seq_range VARCHAR(50) DEFAULT '' COMMENT '来源对话序号范围（如"3-5"）',
+                             status          ENUM('active', 'superseded') DEFAULT 'active' COMMENT '状态',
+                             created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                             superseded_at   DATETIME     NULL COMMENT '被覆盖的时间',
+
+                             INDEX idx_session_status (session_id, status),
+                             INDEX idx_fact_id (fact_id)
+) COMMENT '提取的事实记忆';
+CREATE TABLE memory_preference (
+                                   id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+                                   user_id        BIGINT            NOT NULL COMMENT '用户ID',
+                                   session_id       VARCHAR(64) NOT NULL COMMENT '会话ID',
+                                   preference_category     TINYINT(1) DEFAULT 0 COMMENT '偏好类型,0 是用户偏好 1是会话偏好',
+                                   content          TEXT        NOT NULL COMMENT '偏好描述',
+                                   category         VARCHAR(50) DEFAULT '其他' COMMENT '交互风格|格式要求|工作习惯|关注领域|其他',
+                                   consolidation_seq INT        DEFAULT 1 COMMENT '第几次压缩产生的',
+                                   created_at       DATETIME    DEFAULT CURRENT_TIMESTAMP,
+
+                                   INDEX idx_session (session_id)
+) COMMENT '用户偏好记忆';
+CREATE TABLE memory_unresolved (
+                                   id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+                                   session_id       VARCHAR(64) NOT NULL COMMENT '会话ID',
+                                   content          TEXT        NOT NULL COMMENT '待解决描述',
+                                   type             VARCHAR(50) DEFAULT '待办' COMMENT '未答复问题|进行中任务|用户待办',
+                                   consolidation_seq INT        DEFAULT 1 COMMENT '第几次压缩产生的',
+                                   created_at       DATETIME    DEFAULT CURRENT_TIMESTAMP,
+                                   status          ENUM('active', 'superseded') DEFAULT 'active' COMMENT '是否被用户放弃',
+                                   INDEX idx_session (session_id)
+) COMMENT '未完成事项记忆';
+# 给会话表添加字段和索引
+ALTER TABLE ai_message ADD COLUMN consolidated TINYINT(1) DEFAULT 0 COMMENT '是否已压缩';
+ALTER TABLE ai_message ADD INDEX idx_session_consolidated (ai_session_id, consolidated);

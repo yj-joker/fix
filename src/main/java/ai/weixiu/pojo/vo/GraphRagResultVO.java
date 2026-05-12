@@ -1,7 +1,5 @@
-package ai.weixiu.entity;
+package ai.weixiu.pojo.vo;
 
-import ai.weixiu.pojo.vo.DiagnosisPathVO;
-import ai.weixiu.pojo.vo.FaultVO;
 import lombok.Data;
 
 import java.util.List;

@@ -16,4 +16,6 @@ import java.util.List;
 public interface AiMessageService extends IService<AiMessage> {
 
     List<AiMessage> findMemory(Long id, Long currentId, Integer maxMemory,Integer roundCount);
+
+    List<AiMessage> getNeedIntegrationMemory(Integer roundCount, Long sessionId, Long userId, Integer maxMemory);
 }

@@ -1,5 +1,6 @@
 package ai.weixiu.service;
 
+import ai.weixiu.entity.AiMessage;
 import ai.weixiu.entity.AiSession;
 import com.baomidou.mybatisplus.extension.service.IService;
 

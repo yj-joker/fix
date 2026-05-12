@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 
+
 /**
  * <p>
  *  服务实现类
@@ -31,4 +32,5 @@ public class AiSessionServiceImpl extends ServiceImpl<AiSessionMapper, AiSession
         }
         return aiSession;
     }
+
 }

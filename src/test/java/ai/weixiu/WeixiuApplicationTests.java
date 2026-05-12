@@ -1,6 +1,6 @@
 package ai.weixiu;
 
-import ai.weixiu.entity.GraphRagResultVO;
+import ai.weixiu.pojo.vo.GraphRagResultVO;
 import ai.weixiu.entity.User;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
 import ai.weixiu.service.GraphQueryService;

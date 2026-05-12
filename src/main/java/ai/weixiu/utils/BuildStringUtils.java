@@ -2,24 +2,29 @@ package ai.weixiu.utils;
 
 
 import ai.weixiu.entity.Fault;
-import ai.weixiu.entity.GraphRagResultVO;
+import ai.weixiu.entity.MemoryUnresolved;
+import ai.weixiu.pojo.vo.GraphRagResultVO;
+import ai.weixiu.entity.MemoryPreference;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
 import ai.weixiu.pojo.vo.FaultVO;
+import ai.weixiu.pojo.vo.MemoryPreferenceVO;
+import cn.hutool.json.JSONUtil;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
 public class BuildStringUtils {
     //构建故障的嵌入文本向量
-    public   String buildFaultEmbeddingText(Fault fault) {
+    public String buildFaultEmbeddingText(Fault fault) {
         return """
-            故障名称：%s
-            故障编码：%s
-            故障类别：%s
-            严重程度：%s
-            故障描述：%s
-            """.formatted(
+                故障名称：%s
+                故障编码：%s
+                故障类别：%s
+                严重程度：%s
+                故障描述：%s
+                """.formatted(
                 fault.getName(),
                 fault.getCode(),
                 fault.getCategory(),
@@ -29,15 +34,15 @@ public class BuildStringUtils {
     }
 
     //构建部件的嵌入文本向量
-    public   String buildComponentEmbeddingText(ai.weixiu.entity.Component component) {
+    public String buildComponentEmbeddingText(ai.weixiu.entity.Component component) {
         return """
-            部件名称：%s
-            部件编号：%s
-            规格参数：%s
-            供应商：%s
-            生命周期：%s
-            单价：%s
-            """.formatted(
+                部件名称：%s
+                部件编号：%s
+                规格参数：%s
+                供应商：%s
+                生命周期：%s
+                单价：%s
+                """.formatted(
                 component.getName(),
                 component.getPartNumber(),
                 component.getSpecification(),
@@ -46,8 +51,9 @@ public class BuildStringUtils {
                 component.getUnitPrice()
         );
     }
+
     // 构建返回给AI的图谱知识结果
-    public  String buildGraphContextAssembler(GraphRagResultVO result){
+    public String buildGraphContextAssembler(GraphRagResultVO result) {
         StringBuilder context = new StringBuilder();
         appendQuestion(context, result);
         appendMatchedFaults(context, result.getMatchedFaults());
@@ -55,6 +61,7 @@ public class BuildStringUtils {
         appendRules(context);
         return context.toString();
     }
+
     private void appendQuestion(StringBuilder context, GraphRagResultVO result) {
         context.append("【用户问题】\n");
         context.append(nullToEmpty(result.getQuestion())).append("\n\n");
@@ -125,4 +132,7 @@ public class BuildStringUtils {
     private String nullToEmpty(Object value) {
         return value == null ? "" : String.valueOf(value);
     }
+
+
+
 }

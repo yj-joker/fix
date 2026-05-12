@@ -12,55 +12,67 @@ import lombok.experimental.Accessors;
 
 /**
  * <p>
- * 
+ * 提取的事实记忆
  * </p>
  *
  * @author author
- * @since 2026-05-07
+ * @since 2026-05-12
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
-@TableName("ai_message")
-public class AiMessage implements Serializable {
+@TableName("memory_fact")
+public class MemoryFact implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    @TableField("ai_session_id")
-    private Long aiSessionId;
-
-    @TableField("user_id")
-    private Long userId;
-
     /**
-     * 当前会话是第几轮
+     * 会话ID
      */
-    @TableField("round_no")
-    private Integer roundNo;
+    @TableField("session_id")
+    private String sessionId;
 
     /**
-     * 角色: System, user, assistant, tool
+     * 向量库doc_id，用于supersede引用
      */
-    @TableField("role")
-    private String role;
+    @TableField("fact_id")
+    private String factId;
 
     /**
-     * 消息内容
+     * 事实内容
      */
     @TableField("content")
     private String content;
 
+    /**
+     * 检索关键词
+     */
+    @TableField("keywords")
+    private String keywords;
+
+    /**
+     * 来源对话序号范围（如"3-5"）
+     */
+    @TableField("source_seq_range")
+    private String sourceSeqRange;
+
+    /**
+     * 状态
+     */
+    @TableField("status")
+    private String status;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
 
-    /*
-    * 是否被压缩
-    * */
-    @TableField("consolidated")
-    private Integer consolidated;
+    /**
+     * 被覆盖的时间
+     */
+    @TableField("superseded_at")
+    private LocalDateTime supersededAt;
 
 
 }

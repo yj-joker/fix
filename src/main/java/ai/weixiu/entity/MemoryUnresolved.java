@@ -12,55 +12,54 @@ import lombok.experimental.Accessors;
 
 /**
  * <p>
- * 
+ * 未完成事项记忆
  * </p>
  *
  * @author author
- * @since 2026-05-07
+ * @since 2026-05-12
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
-@TableName("ai_message")
-public class AiMessage implements Serializable {
+@TableName("memory_unresolved")
+public class MemoryUnresolved implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    @TableField("ai_session_id")
-    private Long aiSessionId;
-
-    @TableField("user_id")
-    private Long userId;
-
     /**
-     * 当前会话是第几轮
+     * 会话ID
      */
-    @TableField("round_no")
-    private Integer roundNo;
+    @TableField("session_id")
+    private String sessionId;
 
     /**
-     * 角色: System, user, assistant, tool
-     */
-    @TableField("role")
-    private String role;
-
-    /**
-     * 消息内容
+     * 待解决描述
      */
     @TableField("content")
     private String content;
 
+    /**
+     * 未答复问题|进行中任务|用户待办
+     */
+    @TableField("type")
+    private String type;
+
+    /**
+     * 第几次压缩产生的
+     */
+    @TableField("consolidation_seq")
+    private Integer consolidationSeq;
+    /*
+    * 是否被用户放弃
+    * */
+    @TableField("status")
+    private String status;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
-
-    /*
-    * 是否被压缩
-    * */
-    @TableField("consolidated")
-    private Integer consolidated;
 
 
 }

@@ -12,55 +12,62 @@ import lombok.experimental.Accessors;
 
 /**
  * <p>
- * 
+ * 用户偏好记忆
  * </p>
  *
  * @author author
- * @since 2026-05-07
+ * @since 2026-05-12
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
-@TableName("ai_message")
-public class AiMessage implements Serializable {
+@TableName("memory_preference")
+public class MemoryPreference implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    @TableField("ai_session_id")
-    private Long aiSessionId;
+    /**
+     * 会话ID
+     */
+    @TableField("session_id")
+    private String sessionId;
 
+    /*
+    * 用户ID
+    * */
     @TableField("user_id")
     private Long userId;
 
     /**
-     * 当前会话是第几轮
-     */
-    @TableField("round_no")
-    private Integer roundNo;
-
-    /**
-     * 角色: System, user, assistant, tool
-     */
-    @TableField("role")
-    private String role;
-
-    /**
-     * 消息内容
+     * 偏好描述
      */
     @TableField("content")
     private String content;
 
-    @TableField("created_at")
-    private LocalDateTime createdAt;
+    /**
+     * 交互风格|格式要求|工作习惯|关注领域|其他
+     */
+    @TableField("category")
+    private String category;
+
+    /**
+     * 第几次压缩产生的
+     */
+    @TableField("consolidation_seq")
+    private Integer consolidationSeq;
 
     /*
-    * 是否被压缩
+    * 偏好类型 0:用户级 1:会话级
     * */
-    @TableField("consolidated")
-    private Integer consolidated;
+    @TableField("preference_category")
+    private Integer preferenceCategory;
+
+
+    @TableField("created_at")
+    private LocalDateTime createdAt;
 
 
 }

@@ -30,4 +30,13 @@ public class AiMessageServiceImpl extends ServiceImpl<AiMessageMapper, AiMessage
         }
         return this.list(queryWrapper);
     }
+
+    @Override
+    public List<AiMessage> getNeedIntegrationMemory(Integer roundCount, Long sessionId, Long userId, Integer maxMemory) {
+        LambdaQueryWrapper<AiMessage> queryWrapper=new LambdaQueryWrapper<>();
+        queryWrapper.eq(AiMessage::getUserId,userId)
+                .eq(AiMessage::getAiSessionId,sessionId)
+                .between(AiMessage::getRoundNo,roundCount-maxMemory,roundCount);
+                return this.list(queryWrapper);
+    }
 }
