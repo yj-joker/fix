@@ -1,11 +1,14 @@
 package ai.weixiu.utils;
 
+import ai.weixiu.common.RedisKey;
 import ai.weixiu.entity.AiMessage;
 import ai.weixiu.entity.AiSession;
+import ai.weixiu.entity.CachedPreferences;
 import ai.weixiu.entity.MemoryFact;
 import ai.weixiu.entity.MemoryMessage;
 import ai.weixiu.entity.MemoryPreference;
 import ai.weixiu.entity.MemoryUnresolved;
+import ai.weixiu.enumerate.PreferenceCategoryEnum;
 import ai.weixiu.pojo.vo.MemoryIntegrationParametersVO;
 import ai.weixiu.pojo.vo.MemoryPreferenceVO;
 import ai.weixiu.pojo.vo.MemoryUnresolvedVO;
@@ -22,6 +25,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -30,6 +34,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Component
@@ -41,6 +46,7 @@ public class AsyncUtils {
     private MemoryFactService memoryFactService;
     private MemoryPreferenceService memoryPreferenceService;
     private MemoryUnresolvedService memoryUnresolvedService;
+    private RedisTemplate<String, Object> redisTemplate;
 
 
     //异步整合记忆
@@ -62,6 +68,7 @@ public class AsyncUtils {
                 .bodyToMono(String.class)
                 .block();
         //保存模型生成的摘要
+        log.info("模型返回的摘要, sessionId:{}", summary);
         saveSummary(summary, sessionId, userId, needIntegrationMemory);
     }
 
@@ -128,6 +135,10 @@ public class AsyncUtils {
             }
             memoryPreferenceService.saveBatch(preferences);
             log.info("保存updatedPreferences成功, 数量:{}", preferences.size());
+            // 保存成功后删除缓存
+            String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionIdStr;
+            redisTemplate.delete(prefCacheKey);
+            log.info("删除偏好缓存, key:{}", prefCacheKey);
         }
 
         // 4. 保存updatedUnresolved到memory_unresolved
@@ -215,8 +226,35 @@ public class AsyncUtils {
             memoryMessage.setContent(msg.getContent());
             memoryMessages.add(memoryMessage);
         }
-        //获取长期偏好记忆 用户级加当前会话级
-        List<MemoryPreference> preference = memoryPreferenceService.getPreference(sessionId, userId);
+        //获取长期偏好记忆 用户级加当前会话级（先查缓存）
+        String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
+        CachedPreferences cached = (CachedPreferences) redisTemplate.opsForValue().get(prefCacheKey);
+        List<MemoryPreference> preference;
+        if (cached != null) {
+            preference = new ArrayList<>();
+            if (cached.getUserPreferences() != null) {
+                preference.addAll(cached.getUserPreferences());
+            }
+            if (cached.getSessionPreferences() != null) {
+                preference.addAll(cached.getSessionPreferences());
+            }
+        } else {
+            preference = memoryPreferenceService.getPreference(sessionId, userId);
+            if (!preference.isEmpty()) {
+                List<MemoryPreference> userPrefs = new ArrayList<>();
+                List<MemoryPreference> sessionPrefs = new ArrayList<>();
+                for (MemoryPreference p : preference) {
+                    if (p.getPreferenceCategory() != null
+                            && p.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
+                        userPrefs.add(p);
+                    } else {
+                        sessionPrefs.add(p);
+                    }
+                }
+                CachedPreferences toCache = new CachedPreferences(userPrefs, sessionPrefs);
+                redisTemplate.opsForValue().set(prefCacheKey, toCache, 5, TimeUnit.HOURS);
+            }
+        }
         List<MemoryPreferenceVO> memoryPreferenceVO = getMemoryPreferenceVO(preference);
         //获取未完成摘要
         List<MemoryUnresolved> memoryUnresolved = memoryUnresolvedService.getUnresolved(sessionId);

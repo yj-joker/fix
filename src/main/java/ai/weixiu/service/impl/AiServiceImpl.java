@@ -1,23 +1,38 @@
 package ai.weixiu.service.impl;
 
+import ai.weixiu.common.RedisKey;
 import ai.weixiu.entity.AiChatRequest;
 import ai.weixiu.entity.AiMessage;
 import ai.weixiu.entity.AiSession;
+import ai.weixiu.entity.CachedPreferences;
 import ai.weixiu.entity.MemoryMessage;
+import ai.weixiu.entity.MemoryPreference;
+import ai.weixiu.entity.MemoryUnresolved;
 import ai.weixiu.enumerate.MemoryStatusEnum;
+import ai.weixiu.enumerate.PreferenceCategoryEnum;
 import ai.weixiu.exceprion.AiMemoryException;
+import ai.weixiu.exceprion.FormatErrorException;
+import ai.weixiu.pojo.vo.MemoryPreferenceVO;
+import ai.weixiu.pojo.vo.MemoryUnresolvedVO;
 import ai.weixiu.service.AiMessageService;
 import ai.weixiu.service.AiService;
 import ai.weixiu.service.AiSessionService;
+import ai.weixiu.service.MemoryPreferenceService;
+import ai.weixiu.service.MemoryUnresolvedService;
 import ai.weixiu.utils.AsyncUtils;
 import ai.weixiu.utils.BaseContext;
+import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,6 +42,7 @@ import java.io.File;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @AllArgsConstructor
@@ -36,6 +52,9 @@ public class AiServiceImpl implements AiService {
     private final AiMessageService aiMessageService;
     private final WebClient webClient;
     private final AsyncUtils asyncUtils;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final MemoryPreferenceService memoryPreferenceService;
+    private final MemoryUnresolvedService memoryUnresolvedService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Integer maxMemory = 4;
 
@@ -58,13 +77,10 @@ public class AiServiceImpl implements AiService {
         } else {
             ifOldMemory(aiChatRequest, aiSession, now, userId, memoryMessages);
         }
-        // 组合历史消息
-        memoryMessages.add(new MemoryMessage("user", aiChatRequest.getUserMessage()));
-        String finalUserMessage = JSONUtil.toJsonStr(memoryMessages);
-        aiChatRequest.setUserMessage(finalUserMessage);
-
-
+        // 将历史信息、偏好和待办事项拼接并设置到aiChatRequest
+        finalAiContext(aiChatRequest, aiSession.getId(), userId, memoryMessages);
         log.info("最终消息: {}", aiChatRequest.getUserMessage());
+        log.info("最终对象的JSON格式: {}", JSONUtil.toJsonStr(aiChatRequest));
         Flux<String> flux = getStringFlux(aiChatRequest, uri);
         StringBuilder fullResponse = new StringBuilder();
         AiSession finalAiSession = aiSession;
@@ -81,6 +97,116 @@ public class AiServiceImpl implements AiService {
                 });
     }
 
+    /*
+     * 声音->文本
+     * */
+
+    @Override
+    public String getStringByVoice(MultipartFile file) {
+        boolean valid = isValid(file);
+        if (!valid) {
+            throw new FormatErrorException("不支持的语音文件格式");
+        }
+        MultipartBodyBuilder builder = new MultipartBodyBuilder();
+        builder.part("file", file.getResource());
+        String response = webClient.post()
+                .uri("/api/asr/transcribe")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(BodyInserters.fromMultipartData(builder.build()))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+        JSONObject json = JSONUtil.parseObj(response);
+        if (!json.getBool("success", false)) {
+            throw new FormatErrorException("语音识别失败");
+        }
+        String text = json.getStr("text", "");
+        log.info("语音识别结果: {}", text);
+        return text;
+
+    }
+
+    private  boolean isValid(MultipartFile file) {
+        String contentType = file.getContentType();
+        String filename = file.getOriginalFilename();
+        boolean valid = false;
+        if (contentType != null && (contentType.startsWith("audio/") || contentType.equals("video/webm"))) {
+            valid = true;
+        }
+        if (!valid && filename != null) {
+            String lower = filename.toLowerCase();
+            valid = lower.endsWith(".wav") || lower.endsWith(".mp3") || lower.endsWith(".flac")
+                    || lower.endsWith(".aac") || lower.endsWith(".ogg") || lower.endsWith(".webm")
+                    || lower.endsWith(".m4a") || lower.endsWith(".wma");
+        }
+        return valid;
+    }
+
+    private void finalAiContext(AiChatRequest aiChatRequest, Long sessionId, Long userId, List<MemoryMessage> memoryMessages) {
+        String cacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
+        CachedPreferences cached = (CachedPreferences) redisTemplate.opsForValue().get(cacheKey);
+
+        List<MemoryPreference> allPreferences;
+        if (cached != null) {
+            allPreferences = new ArrayList<>();
+            if (cached.getUserPreferences() != null) {
+                allPreferences.addAll(cached.getUserPreferences());
+            }
+            if (cached.getSessionPreferences() != null) {
+                allPreferences.addAll(cached.getSessionPreferences());
+            }
+        } else {
+            allPreferences = memoryPreferenceService.getPreference(sessionId, userId);
+            if (!allPreferences.isEmpty()) {
+                List<MemoryPreference> userPrefs = new ArrayList<>();
+                List<MemoryPreference> sessionPrefs = new ArrayList<>();
+                for (MemoryPreference pref : allPreferences) {
+                    if (pref.getPreferenceCategory() != null
+                            && pref.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
+                        userPrefs.add(pref);
+                    } else {
+                        sessionPrefs.add(pref);
+                    }
+                }
+                CachedPreferences toCache = new CachedPreferences(userPrefs, sessionPrefs);
+                redisTemplate.opsForValue().set(cacheKey, toCache, 5, TimeUnit.HOURS);
+            }
+        }
+
+        List<MemoryUnresolved> unresolved = memoryUnresolvedService.getUnresolved(sessionId);
+
+        List<MemoryPreferenceVO> userPrefVOs = new ArrayList<>();
+        List<MemoryPreferenceVO> sessionPrefVOs = new ArrayList<>();
+        for (MemoryPreference pref : allPreferences) {
+            MemoryPreferenceVO vo = new MemoryPreferenceVO();
+            vo.setContent(pref.getContent());
+            vo.setCategory(pref.getCategory());
+            vo.setPreferenceCategory(pref.getPreferenceCategory());
+            if (pref.getPreferenceCategory() != null
+                    && pref.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
+                userPrefVOs.add(vo);
+            } else {
+                sessionPrefVOs.add(vo);
+            }
+        }
+
+        List<MemoryUnresolvedVO> unresolvedVOs = new ArrayList<>();
+        for (MemoryUnresolved item : unresolved) {
+            MemoryUnresolvedVO vo = new MemoryUnresolvedVO();
+            vo.setContent(item.getContent());
+            vo.setType(item.getType());
+            vo.setStatus(item.getStatus());
+            unresolvedVOs.add(vo);
+        }
+
+        JSONObject finalContext = new JSONObject();
+        finalContext.set("messages", memoryMessages);
+        finalContext.set("userPreferences", userPrefVOs);
+        finalContext.set("sessionPreferences", sessionPrefVOs);
+        finalContext.set("unresolvedItems", unresolvedVOs);
+
+        aiChatRequest.setUserMessage(JSONUtil.toJsonStr(finalContext));
+    }
 
     private @NonNull Flux<String> getStringFlux(AiChatRequest aiChatRequest, String uri) {
         return webClient.post()

@@ -49,4 +49,9 @@ public class WebExceptionHandler {
         log.info(e.getMessage());
         return Result.error("500", e.getMessage());
     }
+    @ExceptionHandler(FormatErrorException.class)
+    public Result handler(FormatErrorException e) {
+        log.info(e.getMessage());
+        return Result.error("400", e.getMessage());
+    }
 }

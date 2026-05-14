@@ -5,6 +5,7 @@ import ai.weixiu.mapper.AiMessageMapper;
 import ai.weixiu.service.AiMessageService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -18,6 +19,7 @@ import java.util.List;
  * @since 2026-05-07
  */
 @Service
+@Slf4j
 public class AiMessageServiceImpl extends ServiceImpl<AiMessageMapper, AiMessage> implements AiMessageService {
     @Override
     public List<AiMessage> findMemory(Long id, Long currentId, Integer maxMemory,Integer roundCount) {
@@ -25,10 +27,14 @@ public class AiMessageServiceImpl extends ServiceImpl<AiMessageMapper, AiMessage
         queryWrapper.eq(AiMessage::getUserId,currentId)
                 .eq(AiMessage::getAiSessionId,id)
                 .orderByAsc(AiMessage::getCreatedAt);
+        queryWrapper.eq(AiMessage::getConsolidated, 0);
         if(roundCount>maxMemory){
-            queryWrapper.between(AiMessage::getRoundNo,roundCount-maxMemory,roundCount);
+            int start = roundCount%maxMemory;
+            queryWrapper.between(AiMessage::getRoundNo,roundCount-start,roundCount);
         }
-        return this.list(queryWrapper);
+        List<AiMessage> list = this.list(queryWrapper);
+        log.info("findMemory:{}",list.toString());
+        return list;
     }
 
     @Override
@@ -36,6 +42,7 @@ public class AiMessageServiceImpl extends ServiceImpl<AiMessageMapper, AiMessage
         LambdaQueryWrapper<AiMessage> queryWrapper=new LambdaQueryWrapper<>();
         queryWrapper.eq(AiMessage::getUserId,userId)
                 .eq(AiMessage::getAiSessionId,sessionId)
+                .eq(AiMessage::getConsolidated, 0)
                 .between(AiMessage::getRoundNo,roundCount-maxMemory,roundCount);
                 return this.list(queryWrapper);
     }

@@ -2,10 +2,7 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.common.RedisKey;
 import ai.weixiu.enumerate.EmailEnum;
-import ai.weixiu.exceprion.EmailException;
-import ai.weixiu.exceprion.NameOrPasswordException;
-import ai.weixiu.exceprion.NotFoundException;
-import ai.weixiu.exceprion.NullException;
+import ai.weixiu.exceprion.*;
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.entity.User;
@@ -82,7 +79,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     public int batchRegister(MultipartFile file) {
         //判断文件是否是excel文件
         if (!ExcelUtils.isExcelFile(file)) {
-            throw new NullException("必须上传excel文件");
+            throw new FormatErrorException("必须上传excel文件");
         }
         //读取excel获取数据
         List<User> users = ExcelUtils.readExcel(file, User.class);
@@ -291,7 +288,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
           this.updateById(user);
          redisTemplate.delete(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId());
          log.info("邮箱绑定成功");
-         return;
      }
     else if(Objects.equals(mode, EmailEnum.RESET_PASSWORD_EMAIL.getCode())){
          //重置密码
@@ -300,7 +296,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
          this.updateById(user);
          redisTemplate.delete(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId());
          log.info("密码重置成功");
-         return;
      }
      else{
          throw new EmailException("验证码错误,请重新输入");
