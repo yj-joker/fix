@@ -69,6 +69,20 @@ public class AsyncUtils {
                 return;
             }
 
+            // ===== 信息密度检查：跳过低价值对话的整合 =====
+            // 如果所有用户消息都很短（总字符数 < 阈值），说明是闲聊/简单问答，
+            // 不值得花 40s+ 做完整整合，等下一批再一起处理
+            int totalUserContentLength = 0;
+            for (AiMessage msg : needIntegrationMemory) {
+                if ("user".equals(msg.getRole()) && msg.getContent() != null) {
+                    totalUserContentLength += msg.getContent().length();
+                }
+            }
+            if (totalUserContentLength < 30) {
+                log.info("用户消息总长度过短({}字符), 跳过本次整合, sessionId:{}", totalUserContentLength, sessionId);
+                return;
+            }
+
             MemoryIntegrationParametersVO memoryIntegrationParameters = getMemoryIntegrationParametersVO(sessionId, userId, needIntegrationMemory);
             String memoryIntegrationParametersToString = JSONUtil.toJsonStr(memoryIntegrationParameters);
             log.info("此次用户整合记忆发送:{}", memoryIntegrationParametersToString);
