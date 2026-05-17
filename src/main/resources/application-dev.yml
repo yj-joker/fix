@@ -70,3 +70,4 @@ baidu:
     cuid: fix-agent-asr
     dev-pid: 1537
     rate: 16000
+    max-upload-mb: 10

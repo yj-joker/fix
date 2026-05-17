@@ -28,11 +28,20 @@ public class AiController {
     }
 
     /*
-     * 语音输入功能,实现语音->文本转换，并返回给前端
+     * 语音输入功能,实现语音->文本转换，并返回给前端(本地部署大模型)
      * */
-    @PostMapping("/transcribe")
+//    @PostMapping("/transcribe")
+//    @Operation(summary ="语音输入")
+//    public Result<String> transcribe(MultipartFile file) {
+//        return Result.success(aiService.getStringByVoiceViaLLM(file));
+//    }
+
+    /*
+    * 语音输入功能,实现语音->文本转换，并返回给前端(调用百度的服务)
+    * */
+    @PostMapping("/transcribeByBaiDu")
     @Operation(summary ="语音输入")
-    public Result<String> transcribe(MultipartFile file) {
-        return Result.success(aiService.getStringByVoice(file));
+    public Result<String> transcribeByBaiDu(MultipartFile file) {
+        return Result.success(aiService.getStringByVoiceViaBaidu(file));
     }
 }

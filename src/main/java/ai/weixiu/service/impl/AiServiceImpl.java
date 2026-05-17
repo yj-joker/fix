@@ -21,6 +21,7 @@ import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MemoryUnresolvedService;
 import ai.weixiu.utils.AsyncUtils;
 import ai.weixiu.utils.BaseContext;
+import ai.weixiu.utils.VoiceToTextUtils;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import lombok.AllArgsConstructor;
@@ -59,6 +60,7 @@ public class AiServiceImpl implements AiService {
     private final MemoryUnresolvedService memoryUnresolvedService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Integer maxMemory = 4;
+    private final VoiceToTextUtils voiceToTextUtils ;
 
 
     @Override
@@ -109,11 +111,11 @@ public class AiServiceImpl implements AiService {
     }
 
     /*
-     * 声音->文本
+     * 声音->文本(本地部署语音识别大模型)
      * */
 
     @Override
-    public String getStringByVoice(MultipartFile file) {
+    public String getStringByVoiceViaLLM(MultipartFile file) {
         boolean valid = isValid(file);
         if (!valid) {
             throw new FormatErrorException("不支持的语音文件格式");
@@ -137,7 +139,15 @@ public class AiServiceImpl implements AiService {
 
     }
 
-    private  boolean isValid(MultipartFile file) {
+    /*
+     * 声音->文本(调用百度语音识别大模型)
+     * */
+    @Override
+    public String getStringByVoiceViaBaidu(MultipartFile file) {
+        return voiceToTextUtils.transcribe(file);
+    }
+
+    private boolean isValid(MultipartFile file) {
         String contentType = file.getContentType();
         String filename = file.getOriginalFilename();
         boolean valid = false;

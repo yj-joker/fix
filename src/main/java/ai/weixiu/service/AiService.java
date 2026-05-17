@@ -7,5 +7,7 @@ import reactor.core.publisher.Flux;
 public interface AiService {
     Flux<String> chat(AiChatRequest request);
 
-    String getStringByVoice(MultipartFile file);
+    String getStringByVoiceViaLLM(MultipartFile file);
+
+    String getStringByVoiceViaBaidu(MultipartFile file);
 }

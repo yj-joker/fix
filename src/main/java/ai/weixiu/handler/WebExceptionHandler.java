@@ -54,4 +54,13 @@ public class WebExceptionHandler {
         log.info(e.getMessage());
         return Result.error("400", e.getMessage());
     }
+    @ExceptionHandler(IllegalArgumentException.class)
+    public Result handleBadRequest(IllegalArgumentException e) {
+        return Result.error("400", e.getMessage());
+    }
+
+    @ExceptionHandler(Exception.class)
+    public Result handleException(Exception e) {
+        return Result.error("500", e.getMessage());
+    }
 }
