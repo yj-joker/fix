@@ -91,12 +91,18 @@ public class AsyncUtils {
                 }
 
                 //调用模型,获取模型生成的摘要
-                String response = webClient.post()
-                        .uri("/ai/memory/consolidate")
-                        .bodyValue(memoryIntegrationParametersToString)
-                        .retrieve()
-                        .bodyToMono(String.class)
-                        .block();
+                String response;
+                try {
+                    response = webClient.post()
+                            .uri("/ai/memory/consolidate")
+                            .bodyValue(memoryIntegrationParametersToString)
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .block();
+                } catch (Exception e) {
+                    log.warn("记忆整合HTTP调用失败, attempt:{}, sessionId:{}, error:{}", attempt, sessionId, e.getMessage());
+                    continue;
+                }
 
                 // 检查返回是否有效
                 if (response != null) {
@@ -146,6 +152,9 @@ public class AsyncUtils {
         int consolidationSeq = getNextConsolidationSeq(sessionIdStr);
 
         // 1. 保存newFacts到memory_fact
+        // Python向量库存储事实时生成的doc_id列表，与newFacts一一对应
+        // 用这些doc_id作为MySQL的factId，确保两端ID一致（实时纠正时能正确匹配）
+        JSONArray factIds = summaryData.getJSONArray("fact_ids");
         JSONArray newFacts = summaryData.getJSONArray("newFacts");
         if (newFacts != null && !newFacts.isEmpty()) {
             List<MemoryFact> facts = new ArrayList<>();
@@ -154,7 +163,9 @@ public class AsyncUtils {
                 MemoryFact memoryFact = new MemoryFact();
                 memoryFact.setSessionId(sessionIdStr);
                 memoryFact.setUserId(userId);
-                memoryFact.setFactId(UUID.randomUUID().toString());
+                // 优先使用Python返回的向量库doc_id，如果没有则回退到UUID
+                String vectorDocId = (factIds != null && i < factIds.size()) ? factIds.getStr(i) : null;
+                memoryFact.setFactId((vectorDocId != null && !vectorDocId.isEmpty()) ? vectorDocId : UUID.randomUUID().toString());
                 memoryFact.setContent(fact.getStr("content"));
                 memoryFact.setKeywords(fact.getStr("keywords"));
                 memoryFact.setSourceSeqRange(fact.getStr("sourceSeqRange"));
@@ -168,16 +179,16 @@ public class AsyncUtils {
         // 2. 更新supersededIds对应的memory_fact状态
         JSONArray supersededIds = summaryData.getJSONArray("supersededIds");
         if (supersededIds != null && !supersededIds.isEmpty()) {
-            List<String> factIds = new ArrayList<>();
+            List<String> supersededFactIds = new ArrayList<>();
             for (int i = 0; i < supersededIds.size(); i++) {
-                factIds.add(supersededIds.getStr(i));
+                supersededFactIds.add(supersededIds.getStr(i));
             }
             LambdaUpdateWrapper<MemoryFact> factWrapper = new LambdaUpdateWrapper<>();
-            factWrapper.in(MemoryFact::getFactId, factIds)
+            factWrapper.in(MemoryFact::getFactId, supersededFactIds)
                     .set(MemoryFact::getStatus, "superseded")
                     .set(MemoryFact::getSupersededAt, LocalDateTime.now());
             memoryFactService.update(factWrapper);
-            log.info("更新supersededIds成功, 数量:{}", factIds.size());
+            log.info("更新supersededIds成功, 数量:{}", supersededFactIds.size());
         }
 
         // 3. 保存updatedPreferences到memory_preference
@@ -423,17 +434,13 @@ public class AsyncUtils {
                 return;
             }
 
-            JSONObject responseJson = JSONUtil.parseObj(response);
-            JSONObject metadata = responseJson.getJSONObject("metadata");
-            if (metadata == null || !metadata.getBool("has_update", false)) {
+            log.info("[realtime] Python返回原始响应: {}", response);
+            JSONObject result = JSONUtil.parseObj(response);
+            if (!result.getBool("has_update", false)) {
                 log.debug("[realtime] 无需实时更新, sessionId:{}", sessionId);
                 return;
             }
-
-            JSONObject result = metadata.getJSONObject("result");
-            if (result == null) {
-                return;
-            }
+            log.info("[realtime] 检测到实时更新, sessionId:{}", sessionId);
 
             String sessionIdStr = sessionId.toString();
 
@@ -453,8 +460,9 @@ public class AsyncUtils {
                 log.info("[realtime] 标记旧事实为superseded, 数量:{}", factIds.size());
             }
 
-            // 保存新的正确事实
+            // 保存新的正确事实（使用Python返回的向量库doc_id作为factId）
             JSONArray factCorrections = result.getJSONArray("fact_corrections");
+            JSONArray newFactIds = result.getJSONArray("new_fact_ids");
             if (factCorrections != null && !factCorrections.isEmpty()) {
                 List<MemoryFact> newFacts = new ArrayList<>();
                 for (int i = 0; i < factCorrections.size(); i++) {
@@ -462,7 +470,9 @@ public class AsyncUtils {
                     MemoryFact memoryFact = new MemoryFact();
                     memoryFact.setSessionId(sessionIdStr);
                     memoryFact.setUserId(userId);
-                    memoryFact.setFactId(UUID.randomUUID().toString());
+                    // 使用Python返回的向量库doc_id，确保MySQL和向量库ID一致
+                    String vectorDocId = (newFactIds != null && i < newFactIds.size()) ? newFactIds.getStr(i) : null;
+                    memoryFact.setFactId((vectorDocId != null && !vectorDocId.isEmpty()) ? vectorDocId : UUID.randomUUID().toString());
                     memoryFact.setContent(correction.getStr("correct_content"));
                     memoryFact.setKeywords(correction.getStr("keywords"));
                     memoryFact.setStatus("active");

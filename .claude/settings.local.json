@@ -12,7 +12,8 @@
       "WebFetch(domain:help.aliyun.com)",
       "WebFetch(domain:github.com)",
       "mcp__MiniMax__understand_image",
-      "Bash(mvn compile *)"
+      "Bash(mvn compile *)",
+      "Bash(powershell *)"
     ]
   }
 }

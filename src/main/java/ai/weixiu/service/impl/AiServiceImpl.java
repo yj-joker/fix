@@ -41,7 +41,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -167,12 +169,15 @@ public class AiServiceImpl implements AiService {
      * AI回答时能看到之前的事实记录，大大减少幻觉（编造不存在的信息）。
      */
     private void finalAiContext(AiChatRequest aiChatRequest, Long sessionId, Long userId, List<MemoryMessage> memoryMessages) {
+        // ========== 保留原始用户消息（后续realtime更新需要用到） ==========
+        String originalUserMessage = aiChatRequest.getUserMessage();
+
         // ========== 1. 获取上一轮的摘要（作为对话背景） ==========
         AiSession currentSession = aiSessionService.getById(sessionId);
         String previousSummary = (currentSession != null) ? currentSession.getSummary() : null;
 
         // ========== 2. 从Python向量库检索与当前用户消息相关的历史事实 ==========
-        List<JSONObject> relevantFacts = searchRelevantFacts(aiChatRequest.getUserMessage());
+        List<JSONObject> relevantFacts = searchRelevantFacts(originalUserMessage);
 
         // ========== 3. 获取偏好（优先从Redis缓存读取） ==========
         String cacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
@@ -211,7 +216,6 @@ public class AiServiceImpl implements AiService {
         List<MemoryUnresolved> unresolved = memoryUnresolvedService.getUnresolved(sessionId);
 
         // ========== 5. 转换为VO对象 ==========
-        // 偏好分为用户级和会话级两组
         List<MemoryPreferenceVO> userPrefVOs = new ArrayList<>();
         List<MemoryPreferenceVO> sessionPrefVOs = new ArrayList<>();
         for (MemoryPreference pref : allPreferences) {
@@ -236,22 +240,45 @@ public class AiServiceImpl implements AiService {
             unresolvedVOs.add(vo);
         }
 
-        // ========== 6. 组装最终上下文JSON ==========
-        JSONObject finalContext = new JSONObject();
-        // 摘要放最前面，让AI先了解之前的对话背景
-        if (previousSummary != null && !previousSummary.isEmpty()) {
-            finalContext.set("previousContext", previousSummary);
+        // ========== 6. 构建多轮对话历史（OpenAI格式） ==========
+        // 注意：memoryMessages最后一条是刚保存的当前轮user消息，需要排除
+        // 因为当前轮消息会作为独立的message字段发送，避免重复
+        List<Map<String, String>> conversationHistory = new ArrayList<>();
+        for (int i = 0; i < memoryMessages.size(); i++) {
+            MemoryMessage msg = memoryMessages.get(i);
+            // 排除最后一条（当前轮user消息），它已经在message字段中
+            if (i == memoryMessages.size() - 1 && "user".equals(msg.getRole())) {
+                break;
+            }
+            Map<String, String> turn = new HashMap<>();
+            turn.put("role", msg.getRole());
+            turn.put("content", msg.getContent());
+            conversationHistory.add(turn);
         }
-        // 相关事实：从向量库检索的历史事实，防止AI幻觉
-        if (!relevantFacts.isEmpty()) {
-            finalContext.set("relevantFacts", relevantFacts);
-        }
-        finalContext.set("userPreferences", userPrefVOs);
-        finalContext.set("sessionPreferences", sessionPrefVOs);
-        finalContext.set("messages", memoryMessages);
-        finalContext.set("unresolvedItems", unresolvedVOs);
+        aiChatRequest.setConversationHistory(conversationHistory);
 
-        aiChatRequest.setUserMessage(JSONUtil.toJsonStr(finalContext));
+        // ========== 7. 构建结构化上下文（注入system prompt） ==========
+        Map<String, Object> contextMap = new HashMap<>();
+        if (previousSummary != null && !previousSummary.isEmpty()) {
+            contextMap.put("previous_summary", previousSummary);
+        }
+        if (!relevantFacts.isEmpty()) {
+            contextMap.put("relevant_facts", relevantFacts);
+        }
+        if (!userPrefVOs.isEmpty()) {
+            contextMap.put("user_preferences", userPrefVOs);
+        }
+        if (!sessionPrefVOs.isEmpty()) {
+            contextMap.put("session_preferences", sessionPrefVOs);
+        }
+        if (!unresolvedVOs.isEmpty()) {
+            contextMap.put("unresolved_items", unresolvedVOs);
+        }
+        aiChatRequest.setContext(contextMap);
+
+        // ========== 8. userMessage保持为当前用户的原始消息 ==========
+        // 不再覆盖为JSON大块，Python端能正确识别当前轮用户说了什么
+        aiChatRequest.setUserMessage(originalUserMessage);
     }
 
     /**
