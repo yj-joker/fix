@@ -91,3 +91,16 @@ CREATE TABLE memory_unresolved (
 # 给会话表添加字段和索引
 ALTER TABLE ai_message ADD COLUMN consolidated TINYINT(1) DEFAULT 0 COMMENT '是否已压缩';
 ALTER TABLE ai_message ADD INDEX idx_session_consolidated (ai_session_id, consolidated);
+
+# ========== 记忆系统改进 ==========
+
+# 1. memory_fact 新增 user_id 字段 —— 支持跨会话检索事实记忆
+# 之前事实只绑定session_id，用户开新会话就丢失了所有历史事实
+# 加上user_id后，可以检索该用户在所有会话中积累的事实
+ALTER TABLE memory_fact ADD COLUMN user_id BIGINT NOT NULL DEFAULT 0 COMMENT '用户ID，支持跨会话检索';
+ALTER TABLE memory_fact ADD INDEX idx_user_status (user_id, status);
+
+# 2. memory_preference 新增 source_type 字段 —— 区分偏好来源的可靠度
+# explicit = 用户直接说出来的（如"不要写注释"），高可信度
+# inferred = 从行为推断的（如反复追问细节），需多次确认
+ALTER TABLE memory_preference ADD COLUMN source_type VARCHAR(20) DEFAULT 'inferred' COMMENT 'explicit=用户明说, inferred=从行为推断';

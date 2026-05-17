@@ -48,28 +48,89 @@ public class AsyncUtils {
     private MemoryUnresolvedService memoryUnresolvedService;
     private RedisTemplate<String, Object> redisTemplate;
 
+    private static final int MAX_CONSOLIDATION_RETRIES = 2;
+    private static final long RETRY_DELAY_MS = 3000;
+
 
     //异步整合记忆
     @Async
-    public void integrationMemory(Integer roundCount, Long sessionId,Long userId,Integer maxMemory){
-        List<AiMessage> needIntegrationMemory = aiMessageService.getNeedIntegrationMemory(roundCount, sessionId, userId, maxMemory);
-        MemoryIntegrationParametersVO memoryIntegrationParameters = getMemoryIntegrationParametersVO(sessionId, userId, needIntegrationMemory);
-        String memoryIntegrationParametersToString = JSONUtil.toJsonStr(memoryIntegrationParameters);
-        log.info("此次用户整合记忆发送:{}",memoryIntegrationParametersToString);
-        WebClient webClient = WebClient.builder()
-                .baseUrl("http://127.0.0.1:8000")
-                .defaultHeader("Content-Type", "application/json")
-                .build();
-        //调用模型,获取模型生成的摘要
-        String summary = webClient.post()
-                .uri("/ai/memory/consolidate")
-                .bodyValue(memoryIntegrationParametersToString)
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
-        //保存模型生成的摘要
-        log.info("模型返回的摘要, sessionId:{}", summary);
-        saveSummary(summary, sessionId, userId, needIntegrationMemory);
+    public void integrationMemory(Integer roundCount, Long sessionId, Long userId, Integer maxMemory) {
+        String lockKey = RedisKey.CONSOLIDATION_LOCK + sessionId;
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", 5, TimeUnit.MINUTES);
+        if (acquired == null || !acquired) {
+            log.warn("记忆整合已在进行中, sessionId:{}", sessionId);
+            return;
+        }
+
+        try {
+            List<AiMessage> needIntegrationMemory = aiMessageService.getNeedIntegrationMemory(roundCount, sessionId, userId, maxMemory);
+            if (needIntegrationMemory.isEmpty()) {
+                log.info("没有需要整合的消息, sessionId:{}", sessionId);
+                return;
+            }
+
+            MemoryIntegrationParametersVO memoryIntegrationParameters = getMemoryIntegrationParametersVO(sessionId, userId, needIntegrationMemory);
+            String memoryIntegrationParametersToString = JSONUtil.toJsonStr(memoryIntegrationParameters);
+            log.info("此次用户整合记忆发送:{}", memoryIntegrationParametersToString);
+
+            WebClient webClient = WebClient.builder()
+                    .baseUrl("http://127.0.0.1:8000")
+                    .defaultHeader("Content-Type", "application/json")
+                    .build();
+
+            String summary = null;
+            for (int attempt = 0; attempt <= MAX_CONSOLIDATION_RETRIES; attempt++) {
+                if (attempt > 0) {
+                    log.info("记忆整合重试第{}次, sessionId:{}", attempt, sessionId);
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+
+                //调用模型,获取模型生成的摘要
+                String response = webClient.post()
+                        .uri("/ai/memory/consolidate")
+                        .bodyValue(memoryIntegrationParametersToString)
+                        .retrieve()
+                        .bodyToMono(String.class)
+                        .block();
+
+                // 检查返回是否有效
+                if (response != null) {
+                    try {
+                        JSONObject responseJson = JSONUtil.parseObj(response);
+                        if (responseJson.getJSONObject("summary") != null) {
+                            summary = response;
+                            break;
+                        }
+                        // 检查是否返回了错误状态
+                        String status = responseJson.getStr("status");
+                        if ("error".equals(status)) {
+                            log.warn("记忆整合返回错误, attempt:{}, sessionId:{}, response:{}", attempt, sessionId, response);
+                            continue;
+                        }
+                        summary = response;
+                        break;
+                    } catch (Exception e) {
+                        log.warn("记忆整合返回解析失败, attempt:{}, sessionId:{}, response:{}", attempt, sessionId, response);
+                    }
+                }
+            }
+
+            if (summary == null) {
+                log.error("记忆整合最终失败(重试{}次后), sessionId:{}", MAX_CONSOLIDATION_RETRIES, sessionId);
+                return;
+            }
+
+            //保存模型生成的摘要
+            log.info("模型返回的摘要, sessionId:{}", summary);
+            saveSummary(summary, sessionId, userId, needIntegrationMemory);
+        } finally {
+            redisTemplate.delete(lockKey);
+        }
     }
 
     private void saveSummary(String summary, Long sessionId, Long userId, List<AiMessage> needIntegrationMemory) {
@@ -92,6 +153,7 @@ public class AsyncUtils {
                 JSONObject fact = newFacts.getJSONObject(i);
                 MemoryFact memoryFact = new MemoryFact();
                 memoryFact.setSessionId(sessionIdStr);
+                memoryFact.setUserId(userId);
                 memoryFact.setFactId(UUID.randomUUID().toString());
                 memoryFact.setContent(fact.getStr("content"));
                 memoryFact.setKeywords(fact.getStr("keywords"));
@@ -124,17 +186,51 @@ public class AsyncUtils {
             List<MemoryPreference> preferences = new ArrayList<>();
             for (int i = 0; i < updatedPreferences.size(); i++) {
                 JSONObject pref = updatedPreferences.getJSONObject(i);
-                MemoryPreference memoryPreference = new MemoryPreference();
-                memoryPreference.setSessionId(sessionIdStr);
-                memoryPreference.setUserId(userId);
-                memoryPreference.setContent(pref.getStr("content"));
-                memoryPreference.setCategory(pref.getStr("category"));
-                memoryPreference.setPreferenceCategory(pref.getInt("preferenceCategory"));
-                memoryPreference.setConsolidationSeq(consolidationSeq);
-                preferences.add(memoryPreference);
+                String sourceType = pref.getStr("sourceType", "inferred");
+                String action = pref.getStr("action", "upsert");
+
+                if ("explicit".equals(sourceType) && "upsert".equals(action)) {
+                    // 显式偏好：检查是否已存在同类偏好，存在则更新
+                    String category = pref.getStr("category");
+                    Integer preferenceCategory = pref.getInt("preferenceCategory", 0);
+                    LambdaQueryWrapper<MemoryPreference> existQuery = new LambdaQueryWrapper<>();
+                    existQuery.eq(MemoryPreference::getUserId, userId)
+                            .eq(MemoryPreference::getCategory, category)
+                            .eq(MemoryPreference::getPreferenceCategory, preferenceCategory);
+                    if (preferenceCategory == PreferenceCategoryEnum.SESSION_PREFERENCE.getCategory()) {
+                        existQuery.eq(MemoryPreference::getSessionId, sessionIdStr);
+                    }
+                    MemoryPreference existing = memoryPreferenceService.getOne(existQuery, false);
+                    if (existing != null) {
+                        existing.setContent(pref.getStr("content"));
+                        existing.setConsolidationSeq(consolidationSeq);
+                        memoryPreferenceService.updateById(existing);
+                    } else {
+                        MemoryPreference memoryPreference = new MemoryPreference();
+                        memoryPreference.setSessionId(sessionIdStr);
+                        memoryPreference.setUserId(userId);
+                        memoryPreference.setContent(pref.getStr("content"));
+                        memoryPreference.setCategory(category);
+                        memoryPreference.setPreferenceCategory(preferenceCategory);
+                        memoryPreference.setConsolidationSeq(consolidationSeq);
+                        preferences.add(memoryPreference);
+                    }
+                } else {
+                    // 推断偏好或新增：直接新建
+                    MemoryPreference memoryPreference = new MemoryPreference();
+                    memoryPreference.setSessionId(sessionIdStr);
+                    memoryPreference.setUserId(userId);
+                    memoryPreference.setContent(pref.getStr("content"));
+                    memoryPreference.setCategory(pref.getStr("category"));
+                    memoryPreference.setPreferenceCategory(pref.getInt("preferenceCategory", 0));
+                    memoryPreference.setConsolidationSeq(consolidationSeq);
+                    preferences.add(memoryPreference);
+                }
             }
-            memoryPreferenceService.saveBatch(preferences);
-            log.info("保存updatedPreferences成功, 数量:{}", preferences.size());
+            if (!preferences.isEmpty()) {
+                memoryPreferenceService.saveBatch(preferences);
+            }
+            log.info("保存updatedPreferences成功, 数量:{}", updatedPreferences.size());
             // 保存成功后删除缓存
             String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionIdStr;
             redisTemplate.delete(prefCacheKey);
@@ -159,19 +255,18 @@ public class AsyncUtils {
             log.info("保存updatedUnresolved成功, 数量:{}", unresolvedList.size());
         }
 
-        // 5. 更新resolvedItems对应的memory_unresolved状态
+        // 5. 更新resolvedItems对应的memory_unresolved状态（通过ID）
         JSONArray resolvedItems = summaryData.getJSONArray("resolvedItems");
         if (resolvedItems != null && !resolvedItems.isEmpty()) {
-            List<String> resolvedContents = new ArrayList<>();
+            List<Long> resolvedIds = new ArrayList<>();
             for (int i = 0; i < resolvedItems.size(); i++) {
-                resolvedContents.add(resolvedItems.getStr(i));
+                resolvedIds.add(resolvedItems.getLong(i));
             }
             LambdaUpdateWrapper<MemoryUnresolved> unresolvedWrapper = new LambdaUpdateWrapper<>();
-            unresolvedWrapper.eq(MemoryUnresolved::getSessionId, sessionIdStr)
-                    .in(MemoryUnresolved::getContent, resolvedContents)
-                    .set(MemoryUnresolved::getStatus, "superseded");
+            unresolvedWrapper.in(MemoryUnresolved::getId, resolvedIds)
+                    .set(MemoryUnresolved::getStatus, "resolved");
             memoryUnresolvedService.update(unresolvedWrapper);
-            log.info("更新resolvedItems成功, 数量:{}", resolvedContents.size());
+            log.info("更新resolvedItems成功, 数量:{}", resolvedIds.size());
         }
 
         // 6. 更新ai_session的briefSummary
@@ -218,8 +313,8 @@ public class AsyncUtils {
         return maxSeq + 1;
     }
 
-    private @NonNull MemoryIntegrationParametersVO  getMemoryIntegrationParametersVO(Long sessionId, Long userId, List<AiMessage> needIntegrationMemory) {
-        List<MemoryMessage> memoryMessages=new ArrayList<>();
+    private @NonNull MemoryIntegrationParametersVO getMemoryIntegrationParametersVO(Long sessionId, Long userId, List<AiMessage> needIntegrationMemory) {
+        List<MemoryMessage> memoryMessages = new ArrayList<>();
         for (AiMessage msg : needIntegrationMemory) {
             MemoryMessage memoryMessage = new MemoryMessage();
             memoryMessage.setRole(msg.getRole());
@@ -259,21 +354,29 @@ public class AsyncUtils {
         //获取未完成摘要
         List<MemoryUnresolved> memoryUnresolved = memoryUnresolvedService.getUnresolved(sessionId);
         List<MemoryUnresolvedVO> memoryUnresolvedVO = getMemoryUnresolvedVO(memoryUnresolved);
+        //获取上一次摘要
+        LambdaQueryWrapper<AiSession> sessionQuery = new LambdaQueryWrapper<>();
+        sessionQuery.eq(AiSession::getId, sessionId);
+        AiSession session = aiSessionService.getOne(sessionQuery);
+        String previousSummary = session != null ? session.getSummary() : null;
+
         MemoryIntegrationParametersVO memoryIntegrationParameters = new MemoryIntegrationParametersVO();
         memoryIntegrationParameters.setSessionId(sessionId.toString());
         memoryIntegrationParameters.setMemoryMessages(memoryMessages);
         memoryIntegrationParameters.setMemoryPreferenceVOList(memoryPreferenceVO);
         memoryIntegrationParameters.setMemoryUnresolvedVOList(memoryUnresolvedVO);
+        memoryIntegrationParameters.setPreviousSummary(previousSummary);
         return memoryIntegrationParameters;
     }
 
     private List<MemoryUnresolvedVO> getMemoryUnresolvedVO(List<MemoryUnresolved> memoryUnresolved) {
         List<MemoryUnresolvedVO> memoryUnresolvedVOList = new ArrayList<>();
-        for (MemoryUnresolved memoryUnresolved1 : memoryUnresolved) {
+        for (MemoryUnresolved item : memoryUnresolved) {
             MemoryUnresolvedVO memoryUnresolvedVO = new MemoryUnresolvedVO();
-            memoryUnresolvedVO.setContent(memoryUnresolved1.getContent());
-            memoryUnresolvedVO.setType(memoryUnresolved1.getType());
-            memoryUnresolvedVO.setStatus(memoryUnresolved1.getStatus());
+            memoryUnresolvedVO.setId(item.getId());
+            memoryUnresolvedVO.setContent(item.getContent());
+            memoryUnresolvedVO.setType(item.getType());
+            memoryUnresolvedVO.setStatus(item.getStatus());
             memoryUnresolvedVOList.add(memoryUnresolvedVO);
         }
         return memoryUnresolvedVOList;
@@ -291,4 +394,151 @@ public class AsyncUtils {
         return memoryPreferenceVOList;
     }
 
+    /**
+     * 实时记忆更新
+     * 每轮对话完成后异步调用，检测事实纠正和偏好变更并立即生效
+     */
+    @Async
+    public void realtimeMemoryUpdate(Long sessionId, Long userId, String userMessage, String aiResponse) {
+        try {
+            JSONObject requestBody = new JSONObject();
+            requestBody.set("session_id", sessionId.toString());
+            requestBody.set("user_message", userMessage);
+            requestBody.set("ai_response", aiResponse);
+
+            WebClient webClient = WebClient.builder()
+                    .baseUrl("http://127.0.0.1:8000")
+                    .defaultHeader("Content-Type", "application/json")
+                    .build();
+
+            String response = webClient.post()
+                    .uri("/ai/memory/realtime_update")
+                    .bodyValue(requestBody.toString())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (response == null) {
+                log.warn("[realtime] 实时更新返回为空, sessionId:{}", sessionId);
+                return;
+            }
+
+            JSONObject responseJson = JSONUtil.parseObj(response);
+            JSONObject metadata = responseJson.getJSONObject("metadata");
+            if (metadata == null || !metadata.getBool("has_update", false)) {
+                log.debug("[realtime] 无需实时更新, sessionId:{}", sessionId);
+                return;
+            }
+
+            JSONObject result = metadata.getJSONObject("result");
+            if (result == null) {
+                return;
+            }
+
+            String sessionIdStr = sessionId.toString();
+
+            // 处理事实纠正 - 标记旧事实为superseded
+            JSONArray supersededFactIds = result.getJSONArray("superseded_fact_ids");
+            if (supersededFactIds != null && !supersededFactIds.isEmpty()) {
+                List<String> factIds = new ArrayList<>();
+                for (int i = 0; i < supersededFactIds.size(); i++) {
+                    factIds.add(supersededFactIds.getStr(i));
+                }
+                // 在MySQL中标记旧事实为superseded
+                LambdaUpdateWrapper<MemoryFact> factWrapper = new LambdaUpdateWrapper<>();
+                factWrapper.in(MemoryFact::getFactId, factIds)
+                        .set(MemoryFact::getStatus, "superseded")
+                        .set(MemoryFact::getSupersededAt, LocalDateTime.now());
+                memoryFactService.update(factWrapper);
+                log.info("[realtime] 标记旧事实为superseded, 数量:{}", factIds.size());
+            }
+
+            // 保存新的正确事实
+            JSONArray factCorrections = result.getJSONArray("fact_corrections");
+            if (factCorrections != null && !factCorrections.isEmpty()) {
+                List<MemoryFact> newFacts = new ArrayList<>();
+                for (int i = 0; i < factCorrections.size(); i++) {
+                    JSONObject correction = factCorrections.getJSONObject(i);
+                    MemoryFact memoryFact = new MemoryFact();
+                    memoryFact.setSessionId(sessionIdStr);
+                    memoryFact.setUserId(userId);
+                    memoryFact.setFactId(UUID.randomUUID().toString());
+                    memoryFact.setContent(correction.getStr("correct_content"));
+                    memoryFact.setKeywords(correction.getStr("keywords"));
+                    memoryFact.setStatus("active");
+                    newFacts.add(memoryFact);
+                }
+                memoryFactService.saveBatch(newFacts);
+                log.info("[realtime] 保存纠正事实成功, 数量:{}", newFacts.size());
+            }
+
+            // 处理偏好变更
+            JSONArray preferenceChanges = result.getJSONArray("preference_changes");
+            if (preferenceChanges != null && !preferenceChanges.isEmpty()) {
+                boolean cacheInvalidated = false;
+                for (int i = 0; i < preferenceChanges.size(); i++) {
+                    JSONObject prefChange = preferenceChanges.getJSONObject(i);
+                    String action = prefChange.getStr("action", "upsert");
+                    String content = prefChange.getStr("content");
+                    String category = prefChange.getStr("category", "其他");
+                    Integer preferenceCategory = prefChange.getInt("preferenceCategory", 0);
+
+                    if ("delete".equals(action)) {
+                        // 删除偏好：根据内容模糊匹配找到并物理删除
+                        LambdaQueryWrapper<MemoryPreference> deleteQuery = new LambdaQueryWrapper<>();
+                        deleteQuery.eq(MemoryPreference::getUserId, userId)
+                                .like(MemoryPreference::getContent, content);
+                        if (preferenceCategory == PreferenceCategoryEnum.SESSION_PREFERENCE.getCategory()) {
+                            deleteQuery.eq(MemoryPreference::getSessionId, sessionIdStr);
+                        }
+                        List<MemoryPreference> toDelete = memoryPreferenceService.list(deleteQuery);
+                        if (!toDelete.isEmpty()) {
+                            List<Long> deleteIds = toDelete.stream()
+                                    .map(MemoryPreference::getId)
+                                    .collect(Collectors.toList());
+                            memoryPreferenceService.removeByIds(deleteIds);
+                            log.info("[realtime] 删除偏好成功, 数量:{}, content:{}", deleteIds.size(), content);
+                            cacheInvalidated = true;
+                        }
+                    } else {
+                        // upsert偏好：查找已有同类偏好，存在则更新，不存在则新建
+                        LambdaQueryWrapper<MemoryPreference> existQuery = new LambdaQueryWrapper<>();
+                        existQuery.eq(MemoryPreference::getUserId, userId)
+                                .eq(MemoryPreference::getCategory, category)
+                                .eq(MemoryPreference::getPreferenceCategory, preferenceCategory);
+                        if (preferenceCategory == PreferenceCategoryEnum.SESSION_PREFERENCE.getCategory()) {
+                            existQuery.eq(MemoryPreference::getSessionId, sessionIdStr);
+                        }
+                        MemoryPreference existing = memoryPreferenceService.getOne(existQuery, false);
+                        if (existing != null) {
+                            existing.setContent(content);
+                            memoryPreferenceService.updateById(existing);
+                            log.info("[realtime] 更新偏好成功, id:{}, content:{}", existing.getId(), content);
+                        } else {
+                            MemoryPreference newPref = new MemoryPreference();
+                            newPref.setSessionId(sessionIdStr);
+                            newPref.setUserId(userId);
+                            newPref.setContent(content);
+                            newPref.setCategory(category);
+                            newPref.setPreferenceCategory(preferenceCategory);
+                            newPref.setConsolidationSeq(0);
+                            memoryPreferenceService.save(newPref);
+                            log.info("[realtime] 新增偏好成功, content:{}", content);
+                        }
+                        cacheInvalidated = true;
+                    }
+                }
+                // 清除偏好缓存
+                if (cacheInvalidated) {
+                    String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionIdStr;
+                    redisTemplate.delete(prefCacheKey);
+                    log.info("[realtime] 删除偏好缓存, key:{}", prefCacheKey);
+                }
+            }
+
+            log.info("[realtime] 实时记忆更新完成, sessionId:{}", sessionId);
+        } catch (Exception e) {
+            log.error("[realtime] 实时记忆更新失败, sessionId:{}, error:{}", sessionId, e.getMessage(), e);
+        }
+    }
 }

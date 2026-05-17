@@ -88,10 +88,19 @@ public class AiServiceImpl implements AiService {
                 .doOnNext(fullResponse::append)  // 收集每个token
                 .doOnComplete(() -> {
                     saveAiReply(finalAiSession, userId, fullResponse);
-                    //判断此次回复完毕之后是否需要保存记忆
-                    //当前对话超过最大记忆数,并且不是第一次超过,那么需要整合记忆
+
+                    // ===== 实时记忆更新：每轮对话后异步检测事实纠正和偏好变更 =====
+                    // 不阻塞主流程，2-3秒内完成，立即生效
+                    asyncUtils.realtimeMemoryUpdate(
+                            finalAiSession.getId(),
+                            userId,
+                            aiChatRequest.getUserMessage(),
+                            fullResponse.toString()
+                    );
+
+                    // ===== 定时整合：每maxMemory轮触发完整整合 =====
+                    // 处理新事实提取、待办更新、摘要更新等非紧急任务
                     if (finalAiSession.getRoundCount() % maxMemory == 0) {
-                        //异步整合记忆
                         asyncUtils.integrationMemory(finalAiSession.getRoundCount(), finalAiSession.getId(), userId, maxMemory);
                     }
                 });
@@ -142,12 +151,36 @@ public class AiServiceImpl implements AiService {
         return valid;
     }
 
+    /**
+     * 组装最终发送给AI的完整上下文
+     *
+     * 上下文包含6部分（按优先级排列）：
+     * 1. previousContext  - 上一轮整合的渐进式摘要（让AI知道"之前聊了什么"）
+     * 2. relevantFacts    - 从向量库检索的相关事实（让AI"记住"历史事实，防止幻觉）
+     * 3. userPreferences  - 用户级偏好（跨会话通用，如"回复用中文"）
+     * 4. sessionPreferences - 会话级偏好（仅本次会话，如"这次用表格展示"）
+     * 5. messages         - 当前滑动窗口内的原始对话消息
+     * 6. unresolvedItems  - 还没解决的待办事项
+     *
+     * 【为什么要检索事实？】
+     * 之前事实提取了但从不使用，等于白做。现在通过向量检索把相关事实注入上下文，
+     * AI回答时能看到之前的事实记录，大大减少幻觉（编造不存在的信息）。
+     */
     private void finalAiContext(AiChatRequest aiChatRequest, Long sessionId, Long userId, List<MemoryMessage> memoryMessages) {
+        // ========== 1. 获取上一轮的摘要（作为对话背景） ==========
+        AiSession currentSession = aiSessionService.getById(sessionId);
+        String previousSummary = (currentSession != null) ? currentSession.getSummary() : null;
+
+        // ========== 2. 从Python向量库检索与当前用户消息相关的历史事实 ==========
+        List<JSONObject> relevantFacts = searchRelevantFacts(aiChatRequest.getUserMessage());
+
+        // ========== 3. 获取偏好（优先从Redis缓存读取） ==========
         String cacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
         CachedPreferences cached = (CachedPreferences) redisTemplate.opsForValue().get(cacheKey);
 
         List<MemoryPreference> allPreferences;
         if (cached != null) {
+            // 缓存命中，直接使用
             allPreferences = new ArrayList<>();
             if (cached.getUserPreferences() != null) {
                 allPreferences.addAll(cached.getUserPreferences());
@@ -156,6 +189,7 @@ public class AiServiceImpl implements AiService {
                 allPreferences.addAll(cached.getSessionPreferences());
             }
         } else {
+            // 缓存未命中，从数据库查询并写入缓存
             allPreferences = memoryPreferenceService.getPreference(sessionId, userId);
             if (!allPreferences.isEmpty()) {
                 List<MemoryPreference> userPrefs = new ArrayList<>();
@@ -173,8 +207,11 @@ public class AiServiceImpl implements AiService {
             }
         }
 
+        // ========== 4. 获取未解决的待办事项 ==========
         List<MemoryUnresolved> unresolved = memoryUnresolvedService.getUnresolved(sessionId);
 
+        // ========== 5. 转换为VO对象 ==========
+        // 偏好分为用户级和会话级两组
         List<MemoryPreferenceVO> userPrefVOs = new ArrayList<>();
         List<MemoryPreferenceVO> sessionPrefVOs = new ArrayList<>();
         for (MemoryPreference pref : allPreferences) {
@@ -199,13 +236,67 @@ public class AiServiceImpl implements AiService {
             unresolvedVOs.add(vo);
         }
 
+        // ========== 6. 组装最终上下文JSON ==========
         JSONObject finalContext = new JSONObject();
-        finalContext.set("messages", memoryMessages);
+        // 摘要放最前面，让AI先了解之前的对话背景
+        if (previousSummary != null && !previousSummary.isEmpty()) {
+            finalContext.set("previousContext", previousSummary);
+        }
+        // 相关事实：从向量库检索的历史事实，防止AI幻觉
+        if (!relevantFacts.isEmpty()) {
+            finalContext.set("relevantFacts", relevantFacts);
+        }
         finalContext.set("userPreferences", userPrefVOs);
         finalContext.set("sessionPreferences", sessionPrefVOs);
+        finalContext.set("messages", memoryMessages);
         finalContext.set("unresolvedItems", unresolvedVOs);
 
         aiChatRequest.setUserMessage(JSONUtil.toJsonStr(finalContext));
+    }
+
+    /**
+     * 调用Python端向量检索接口，查找与用户消息语义最相关的历史事实
+     *
+     * 【工作原理】
+     * 1. 把用户当前发送的消息作为查询文本发给Python端
+     * 2. Python端用text-embedding模型把查询文本转为向量
+     * 3. 在Redis向量库中做KNN近邻搜索，找到最相似的事实记录
+     * 4. 返回top 5条最相关的事实
+     *
+     * 这些事实会被注入到AI对话上下文中，让AI能"记住"之前提取的事实。
+     *
+     * @param userMessage 用户当前发送的消息
+     * @return 相关事实列表，每条包含 content/score/keywords 等字段
+     */
+    private List<JSONObject> searchRelevantFacts(String userMessage) {
+        try {
+            // 调用Python端的事实检索接口
+            String response = webClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/ai/memory/search_facts")
+                            .queryParam("query", userMessage)
+                            .queryParam("top_k", 5)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            if (response != null) {
+                JSONObject result = JSONUtil.parseObj(response);
+                cn.hutool.json.JSONArray facts = result.getJSONArray("facts");
+                if (facts != null && !facts.isEmpty()) {
+                    List<JSONObject> factList = new ArrayList<>();
+                    for (int i = 0; i < facts.size(); i++) {
+                        factList.add(facts.getJSONObject(i));
+                    }
+                    log.info("向量检索到{}条相关事实", factList.size());
+                    return factList;
+                }
+            }
+        } catch (Exception e) {
+            // 事实检索失败不影响主流程，降级为没有事实记忆
+            log.warn("事实记忆向量检索失败，降级运行: {}", e.getMessage());
+        }
+        return new ArrayList<>();
     }
 
     private @NonNull Flux<String> getStringFlux(AiChatRequest aiChatRequest, String uri) {
