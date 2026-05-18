@@ -1,6 +1,6 @@
 package ai.weixiu.utils;
 
-import ai.weixiu.entity.BaiDuConfigurationProperties;
+import ai.weixiu.config.BaiDuConfigurationProperties;
 import ai.weixiu.pojo.dto.BaiDuAsrDTO;
 import ai.weixiu.pojo.dto.BaiDuTokenDTO;
 import org.springframework.http.MediaType;

@@ -15,7 +15,7 @@ import java.time.LocalDate;
 
 
 @Component
-public class UpLoadUtils {
+public class AliyunUpLoadUtils {
 
     private final OSSClient ossClient;
     private final OssConfig ossConfig;
@@ -24,7 +24,7 @@ public class UpLoadUtils {
     @Value("${aliyun.oss.region}")
     private  String region;
 
-    public UpLoadUtils(OSSClient ossClient, OssConfig ossConfig) {
+    public AliyunUpLoadUtils(OSSClient ossClient, OssConfig ossConfig) {
         this.ossClient = ossClient;
         this.ossConfig = ossConfig;
     }

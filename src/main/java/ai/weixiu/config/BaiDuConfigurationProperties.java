@@ -1,4 +1,4 @@
-package ai.weixiu.entity;
+package ai.weixiu.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

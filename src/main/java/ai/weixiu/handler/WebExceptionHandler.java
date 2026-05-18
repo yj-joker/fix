@@ -63,4 +63,8 @@ public class WebExceptionHandler {
     public Result handleException(Exception e) {
         return Result.error("500", e.getMessage());
     }
+    @ExceptionHandler(UploadException.class)
+    public Result handleUploadException(UploadException e) {
+        return Result.error("500", e.getMessage());
+    }
 }

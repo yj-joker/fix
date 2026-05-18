@@ -1,23 +1,29 @@
 package ai.weixiu.controller;
 
 
+import ai.weixiu.enumerate.BucketEnum;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.pojo.query.UserQuery;
 import ai.weixiu.pojo.vo.UserVO;
+import ai.weixiu.service.MioIOUpLoadService;
 import ai.weixiu.service.UserService;
-import ai.weixiu.utils.UpLoadUtils;
+import ai.weixiu.utils.AliyunUpLoadUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 /**
@@ -34,7 +40,8 @@ import java.util.List;
 @Tag(name = "用户管理")
 public class UserController {
     private final UserService userService;
-    private final UpLoadUtils upLoadUtils;
+    private final AliyunUpLoadUtils aliyunUpLoadUtils;
+    private final MioIOUpLoadService minIOUpLoadService;
 
     /*
      * 用户注册
@@ -112,17 +119,52 @@ public class UserController {
         return Result.success();
     }
     /*
-    * 上传图片
+    * 阿里云OSS上传图片
     * */
-    @PostMapping("/upload")
+    @PostMapping("/uploadByAliyun")
     @Operation(summary = "上传图片")
-    public Result upload(MultipartFile file) {
+    public Result uploadByAliyun(MultipartFile file)  {
         String url;
         try {
-             url = upLoadUtils.upload(file);
-        } catch (IOException ignored) {
-            return Result.error("500","上传图片失败,请稍后再试");
+            url = aliyunUpLoadUtils.upload(file);
+        } catch (IOException e) {
+           return Result.error("500","上传失败");
         }
         return Result.success(url);
     }
+    /**
+     * 本地MinIO上传图片上传文件
+     */
+    @PostMapping("/uploadByMinIO")
+    public Result<String> uploadByMinIO(@RequestParam("file") MultipartFile file,BucketEnum bucket) {
+    return Result.success( minIOUpLoadService.upload(file, bucket));
+    }
+
+    /**
+     * 下载文件
+     * GET /api/file/download?objectName=xxx.jpg
+     */
+    @GetMapping("/download")
+    public ResponseEntity<byte[]> download(@RequestParam String objectName, BucketEnum bucket) {
+        try (InputStream is = minIOUpLoadService.download(objectName,bucket)) {
+            byte[] bytes = is.readAllBytes();
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"" + objectName + "\"")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(bytes);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 删除文件
+     */
+    @DeleteMapping("/delete")
+    public Result deleteFile(@RequestParam String objectName, BucketEnum bucket) {
+        minIOUpLoadService.delete(objectName, bucket);
+        return Result.success();
+    }
+
 }
