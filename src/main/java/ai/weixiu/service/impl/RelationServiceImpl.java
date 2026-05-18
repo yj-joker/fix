@@ -68,7 +68,7 @@ public class RelationServiceImpl implements RelationService {
         return execute("""
             MATCH (c:CaseRecord {id: $sourceId})
             MATCH (f:Fault {id: $targetId})
-            MERGE (c)-[r:RECORDED_BY]->(f)
+            MERGE (c)-[r:RECORDED]->(f)
             RETURN count(r)
             """, caseRecordId, faultId);
     }

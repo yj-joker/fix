@@ -19,6 +19,7 @@ import java.util.Set;
 @Node("Device")//设备节点
 public class Device {
     @Id
+    @GeneratedValue(UUIDStringGenerator.class)
     private String id;
 
     @Property("name")//设备名称

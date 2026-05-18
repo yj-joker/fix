@@ -9,15 +9,22 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 @Component
 public class VoiceToTextUtils {
 
-    private final WebClient webClient;
+    private final WebClient tokenClient;  // aip.baidubce.com — 用于获取 token
+    private final WebClient asrClient;   // vop.baidu.com — 用于语音识别
     private final BaiDuConfigurationProperties properties;
+
+    private static final long FFMPEG_TIMEOUT_SECONDS = 30;
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(15);
 
     private String cachedToken;
     private long expireAtMillis;
@@ -26,27 +33,49 @@ public class VoiceToTextUtils {
     public Path convertToPcm(Path inputFile) {
         try {
             Path outputFile = Files.createTempFile("baidu-asr-", ".pcm");
+            int rate = properties.getRate() == null ? 16000 : properties.getRate();
 
             ProcessBuilder builder = new ProcessBuilder(
                     "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel", "error",
+                    "-nostdin",
                     "-y",
-                    "-vn",
                     "-i", inputFile.toAbsolutePath().toString(),
+                    "-vn",
+                    "-map", "0:a:0",
+                    "-acodec", "pcm_s16le",
                     "-ac", "1",
-                    "-ar", "16000",
+                    "-ar", String.valueOf(rate),
                     "-f", "s16le",
                     outputFile.toAbsolutePath().toString()
             );
 
-            builder.redirectError(ProcessBuilder.Redirect.PIPE);
-            builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            /*
+             * FFmpeg 会把日志写到 stderr。若只 waitFor() 而不消费输出，日志较多时管道会被写满，
+             * Java 线程一直等待，表现为“转码失败/卡住”。这里合并输出并在 waitFor 前读完。
+             */
+            builder.redirectErrorStream(true);
 
             Process process = builder.start();
-            int exitCode = process.waitFor();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            boolean finished = process.waitFor(FFMPEG_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
+            if (!finished) {
+                process.destroyForcibly();
+                deleteQuietly(outputFile);
+                throw new IllegalStateException("FFmpeg 音频转码超时（" + FFMPEG_TIMEOUT_SECONDS + "秒）");
+            }
+
+            int exitCode = process.exitValue();
             if (exitCode != 0) {
-                String errorOutput = new String(process.getErrorStream().readAllBytes());
-                throw new IllegalStateException("FFmpeg 音频转码失败: " + errorOutput.trim());
+                deleteQuietly(outputFile);
+                throw new IllegalStateException("FFmpeg 音频转码失败: " + output.trim());
+            }
+
+            if (!Files.exists(outputFile) || Files.size(outputFile) == 0) {
+                deleteQuietly(outputFile);
+                throw new IllegalStateException("FFmpeg 音频转码失败: 输出 PCM 文件为空");
             }
 
             return outputFile;
@@ -73,19 +102,20 @@ public class VoiceToTextUtils {
 
             byte[] pcmBytes = Files.readAllBytes(pcmFile);
             String token = getAccessToken();
+            int rate = properties.getRate() == null ? 16000 : properties.getRate();
 
-            BaiDuAsrDTO response = webClient.post()
+            BaiDuAsrDTO response = asrClient.post()
                     .uri(uriBuilder -> uriBuilder
                             .path("/server_api")
                             .queryParam("dev_pid", properties.getDevPid())
                             .queryParam("cuid", properties.getCuid())
                             .queryParam("token", token)
                             .build())
-                    .contentType(MediaType.parseMediaType("audio/pcm;rate=" + properties.getRate()))
+                    .contentType(MediaType.parseMediaType("audio/pcm;rate=" + rate))
                     .bodyValue(pcmBytes)
                     .retrieve()
                     .bodyToMono(BaiDuAsrDTO.class)
-                    .block();
+                    .block(HTTP_TIMEOUT);
 
             if (response == null) {
                 throw new IllegalStateException("百度语音识别无响应");
@@ -114,9 +144,10 @@ public class VoiceToTextUtils {
             throw new IllegalArgumentException("音频文件不能为空");
         }
 
-        long maxBytes = properties.getMaxUploadMb() * 1024L * 1024L;
+        int maxMb = properties.getMaxUploadMb() == null ? 10 : properties.getMaxUploadMb();
+        long maxBytes = maxMb * 1024L * 1024L;
         if (file.getSize() > maxBytes) {
-            throw new IllegalArgumentException("音频文件不能超过 " + properties.getMaxUploadMb() + "MB");
+            throw new IllegalArgumentException("音频文件不能超过 " + maxMb + "MB");
         }
 
         String suffix = getSuffix(file.getOriginalFilename()).toLowerCase();
@@ -144,7 +175,8 @@ public class VoiceToTextUtils {
 
     public VoiceToTextUtils(WebClient.Builder builder,
                             BaiDuConfigurationProperties properties) {
-        this.webClient = builder.baseUrl("https://aip.baidubce.com").build();
+        this.tokenClient = builder.clone().baseUrl("https://aip.baidubce.com").build();
+        this.asrClient = builder.clone().baseUrl("https://vop.baidu.com").build();
         this.properties = properties;
     }
 
@@ -154,7 +186,7 @@ public class VoiceToTextUtils {
             return cachedToken;
         }
 
-        BaiDuTokenDTO response = webClient.post()
+        BaiDuTokenDTO response = tokenClient.post()
                 .uri(uriBuilder -> uriBuilder
                         .path("/oauth/2.0/token")
                         .queryParam("grant_type", "client_credentials")
@@ -163,7 +195,7 @@ public class VoiceToTextUtils {
                         .build())
                 .retrieve()
                 .bodyToMono(BaiDuTokenDTO.class)
-                .block();
+                .block(HTTP_TIMEOUT);
 
         if (response == null || response.getAccessToken() == null) {
             throw new IllegalStateException("获取百度 access_token 失败");

@@ -64,7 +64,7 @@ public class GraphQueryServiceImpl implements GraphQueryService {
          */
         List<String> deviceIds = List.of();
         if (hasText(keyword)) {
-            List<DeviceVO> devices = deviceRepository.getDevices(keyword, 0, Integer.MAX_VALUE);
+            List<DeviceVO> devices = deviceRepository.getDevices(keyword, 0, 1000);
             deviceIds = devices.stream()
                     .map(DeviceVO::getId)
                     .toList();
@@ -432,7 +432,6 @@ public class GraphQueryServiceImpl implements GraphQueryService {
                         WHERE d.id IN $deviceIds
                           AND c.id IN $componentIds
                           AND f.id IN $faultIds
-                        OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
                         RETURN count(*) AS total
                         """)
                 .bind(deviceIds).to("deviceIds")
@@ -448,7 +447,6 @@ public class GraphQueryServiceImpl implements GraphQueryService {
                         MATCH (d:Device)-[:OWNS]->(c:Component)-[:CAUSES]->(f:Fault)
                         WHERE c.id IN $componentIds
                           AND f.id IN $faultIds
-                        OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
                         RETURN count(*) AS total
                         """)
                 .bind(componentIds).to("componentIds")
@@ -462,7 +460,6 @@ public class GraphQueryServiceImpl implements GraphQueryService {
         return neo4jClient.query("""
                         MATCH (d:Device)-[:OWNS]->(c:Component)-[:CAUSES]->(f:Fault)
                         WHERE c.id IN $componentIds
-                        OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
                         RETURN count(*) AS total
                         """)
                 .bind(componentIds).to("componentIds")
@@ -477,7 +474,6 @@ public class GraphQueryServiceImpl implements GraphQueryService {
                         WHERE d.id IN $deviceIds
                         MATCH (d)-[:OWNS]->(c:Component)-[:CAUSES]->(f:Fault)
                         WHERE f.id IN $faultIds
-                        OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
                         RETURN count(*) AS total
                         """)
                 .bind(deviceIds).to("deviceIds")
@@ -491,7 +487,6 @@ public class GraphQueryServiceImpl implements GraphQueryService {
         return neo4jClient.query("""
                         MATCH (d:Device)-[:OWNS]->(c:Component)-[:CAUSES]->(f:Fault)
                         WHERE f.id IN $faultIds
-                        OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
                         RETURN count(*) AS total
                         """)
                 .bind(faultIds).to("faultIds")

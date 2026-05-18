@@ -61,7 +61,7 @@ public class Fault {
 //    @Builder.Default
 //    private Set<CaseRecord> caseRecords = new HashSet<>();
 
-    // 关系 发生在哪个设备上（故障 --> 设备，故障端是 OUTGOING）
-    @Relationship(type = "OCCURS_ON", direction = Relationship.Direction.OUTGOING)
+    // 关系 发生在哪个设备上（设备 --[HAS_FAULT]--> 故障，故障端是 INCOMING）
+    @Relationship(type = "HAS_FAULT", direction = Relationship.Direction.INCOMING)
     private Device device;
 }

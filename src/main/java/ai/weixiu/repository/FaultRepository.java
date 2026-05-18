@@ -19,18 +19,18 @@ public interface FaultRepository extends Neo4jRepository<Fault, String> {
     @Query("""
         MATCH (f:Fault {id: $faultId})-[:HAS_SOLUTION]->(s:Solution)
         WHERE $solutionTitle IS NULL OR $solutionTitle = '' OR s.title CONTAINS $solutionTitle
-        WITH s ORDER BY s.title SKIP $skip LIMIT $limit
-        RETURN collect({
-            id: s.id,
-            code: s.code,
-            title: s.title,
-            description: s.description,
-            toolsRequired: s.tools_required,
-            estimatedTime: s.estimated_time,
-            difficulty: s.difficulty,
-            createdAt: s.created_at,
-            verified: s.verified
-        }) AS records
+        RETURN s.id AS id,
+               s.code AS code,
+               s.title AS title,
+               s.description AS description,
+               s.tools_required AS toolsRequired,
+               s.estimated_time AS estimatedTime,
+               s.difficulty AS difficulty,
+               s.created_at AS createdAt,
+               s.verified AS verified
+        ORDER BY s.title
+        SKIP $skip
+        LIMIT $limit
         """)
     List<SolutionVO> getSolutionRecords(
         @Param("faultId") String faultId,

@@ -39,7 +39,7 @@ public class AiController {
     /*
     * 语音输入功能,实现语音->文本转换，并返回给前端(调用百度的服务)
     * */
-    @PostMapping("/transcribeByBaiDu")
+    @PostMapping("/transcribe")
     @Operation(summary ="语音输入")
     public Result<String> transcribeByBaiDu(MultipartFile file) {
         return Result.success(aiService.getStringByVoiceViaBaidu(file));

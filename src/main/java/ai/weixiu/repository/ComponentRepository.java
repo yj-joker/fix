@@ -19,17 +19,17 @@ public interface ComponentRepository extends Neo4jRepository<Component, String> 
     @Query("""
             MATCH (c:Component {id: $componentId})-[:CAUSES]->(f:Fault)
             WHERE $faultName IS NULL OR $faultName = '' OR f.name CONTAINS $faultName
-            WITH f ORDER BY f.name SKIP $skip LIMIT $limit
-            RETURN collect({
-                id: f.id,
-                code: f.code,
-                name: f.name,
-                description: f.description,
-                severity: f.severity,
-                category: f.category,
-                occurrenceTime: f.occurrence_time,
-                reportedBy: f.reported_by
-            }) AS records
+            RETURN f.id AS id,
+                   f.code AS code,
+                   f.name AS name,
+                   f.description AS description,
+                   f.severity AS severity,
+                   f.category AS category,
+                   f.occurrence_time AS occurrenceTime,
+                   f.reported_by AS reportedBy
+            ORDER BY f.name
+            SKIP $skip
+            LIMIT $limit
             """)
     List<FaultVO> getFaultRecords(
             @Param("componentId") String componentId,

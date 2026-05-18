@@ -40,16 +40,16 @@ public interface DeviceRepository extends Neo4jRepository<Device, String> {
     @Query("""
             MATCH (d:Device {id: $deviceId})-[:OWNS]->(c:Component)
             WHERE $componentName IS NULL OR $componentName = '' OR c.name CONTAINS $componentName
-            WITH c ORDER BY c.name SKIP $skip LIMIT $limit
-            RETURN collect({
-                id: c.id,
-                name: c.name,
-                partNumber: c.part_number,
-                specification: c.specification,
-                supplier: c.supplier,
-                lifecycle: c.lifecycle,
-                unitPrice: c.unit_price
-            }) AS records
+            RETURN c.id AS id,
+                   c.name AS name,
+                   c.part_number AS partNumber,
+                   c.specification AS specification,
+                   c.supplier AS supplier,
+                   c.lifecycle AS lifecycle,
+                   c.unit_price AS unitPrice
+            ORDER BY c.name
+            SKIP $skip
+            LIMIT $limit
             """)
     List<ComponentVO> getComponentRecords(
             @Param("deviceId") String deviceId,
