@@ -11,7 +11,7 @@ import ai.weixiu.repository.ComponentRepository;
 import ai.weixiu.service.ComponentService;
 import ai.weixiu.utils.BuildStringUtils;
 import ai.weixiu.utils.EmbeddingUtils;
-import ai.weixiu.utils.ImageEmbeddingUtils;
+import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -28,7 +28,7 @@ public class ComponentServiceImpl implements ComponentService {
     private final ComponentRepository componentRepository;
     private final BuildStringUtils buildStringUtils;
     private final EmbeddingUtils embeddingUtils;
-    private final ImageEmbeddingUtils imageEmbeddingUtils;
+    private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
 
     @Override
     @Transactional
@@ -37,9 +37,10 @@ public class ComponentServiceImpl implements ComponentService {
         component.setId(UUID.randomUUID().toString());
         List<Double> embedding = getEmbedding(component);
         component.setEmbedding(embedding);
-        if (component.getImageUrls() != null && !component.getImageUrls().isEmpty()) {
-            component.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(component.getImageUrls()));
-        }
+        String embeddingText = buildStringUtils.buildComponentEmbeddingText(component);
+        component.setMultimodalEmbedding(
+            multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, component.getImageUrls())
+        );
         return componentRepository.save(component);
     }
 
@@ -71,9 +72,10 @@ public class ComponentServiceImpl implements ComponentService {
         Component component = toEntity(componentDTO);
         List<Double> embedding = getEmbedding(component);
         component.setEmbedding(embedding);
-        if (component.getImageUrls() != null && !component.getImageUrls().isEmpty()) {
-            component.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(component.getImageUrls()));
-        }
+        String embeddingText = buildStringUtils.buildComponentEmbeddingText(component);
+        component.setMultimodalEmbedding(
+            multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, component.getImageUrls())
+        );
         return componentRepository.save(component);
     }
     /*

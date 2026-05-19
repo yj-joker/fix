@@ -52,6 +52,49 @@ public class BuildStringUtils {
         );
     }
 
+    //构建设备的嵌入文本向量
+    public String buildDeviceEmbeddingText(ai.weixiu.entity.Device device) {
+        return """
+                设备名称：%s
+                设备编号：%s
+                型号：%s
+                位置：%s
+                制造商：%s
+                """.formatted(
+                device.getName(),
+                device.getCode(),
+                device.getModel(),
+                device.getLocation(),
+                device.getManufacturer()
+        );
+    }
+
+    //构建解决方案的嵌入文本向量
+    public String buildSolutionEmbeddingText(ai.weixiu.entity.Solution solution) {
+        return """
+                方案标题：%s
+                方案描述：%s
+                预计耗时：%s 分钟
+                """.formatted(
+                solution.getTitle(),
+                solution.getDescription(),
+                solution.getEstimatedTime()
+        );
+    }
+
+    //构建案例记录的嵌入文本向量
+    public String buildCaseRecordEmbeddingText(ai.weixiu.entity.CaseRecord caseRecord) {
+        return """
+                案例标题：%s
+                案例摘要：%s
+                解决过程：%s
+                """.formatted(
+                caseRecord.getTitle(),
+                caseRecord.getSummary(),
+                caseRecord.getResolution()
+        );
+    }
+
     // 构建返回给AI的图谱知识结果
     public String buildGraphContextAssembler(GraphRagResultVO result) {
         StringBuilder context = new StringBuilder();

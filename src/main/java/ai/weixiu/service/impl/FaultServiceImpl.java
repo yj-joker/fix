@@ -11,7 +11,7 @@ import ai.weixiu.repository.FaultRepository;
 import ai.weixiu.service.FaultService;
 import ai.weixiu.utils.BuildStringUtils;
 import ai.weixiu.utils.EmbeddingUtils;
-import ai.weixiu.utils.ImageEmbeddingUtils;
+import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import lombok.AllArgsConstructor;
 import org.jspecify.annotations.NonNull;
 import org.springframework.beans.BeanUtils;
@@ -28,7 +28,7 @@ public class FaultServiceImpl implements FaultService {
     private final String notFoundMessage = "故障不存在";
     private final EmbeddingUtils embeddingUtils;
     private final BuildStringUtils buildStringUtils;
-    private final ImageEmbeddingUtils imageEmbeddingUtils;
+    private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
     /*
     * 新增故障实体
     * */
@@ -39,9 +39,10 @@ public class FaultServiceImpl implements FaultService {
         fault.setId(UUID.randomUUID().toString());
         List<Double> embedding = getEmbedding(fault);
         fault.setEmbedding(embedding);
-        if (fault.getImageUrls() != null && !fault.getImageUrls().isEmpty()) {
-            fault.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(fault.getImageUrls()));
-        }
+        String embeddingText = buildStringUtils.buildFaultEmbeddingText(fault);
+        fault.setMultimodalEmbedding(
+            multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, fault.getImageUrls())
+        );
         return faultRepository.save(fault);
     }
 
@@ -73,9 +74,10 @@ public class FaultServiceImpl implements FaultService {
         Fault fault = toEntity(faultDTO);
         List<Double> embedding = getEmbedding(fault);
         fault.setEmbedding(embedding);
-        if (fault.getImageUrls() != null && !fault.getImageUrls().isEmpty()) {
-            fault.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(fault.getImageUrls()));
-        }
+        String embeddingText = buildStringUtils.buildFaultEmbeddingText(fault);
+        fault.setMultimodalEmbedding(
+            multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, fault.getImageUrls())
+        );
         return faultRepository.save(fault);
     }
 

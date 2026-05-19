@@ -12,7 +12,8 @@ import ai.weixiu.pojo.vo.DeviceOverviewVO;
 import ai.weixiu.pojo.vo.DeviceVO;
 import ai.weixiu.repository.DeviceRepository;
 import ai.weixiu.service.DeviceService;
-import ai.weixiu.utils.ImageEmbeddingUtils;
+import ai.weixiu.utils.BuildStringUtils;
+import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.neo4j.core.Neo4jClient;
@@ -29,7 +30,8 @@ public class DeviceServiceImpl implements DeviceService {
 
     private final DeviceRepository deviceRepository;
     private final Neo4jClient neo4jClient;
-    private final ImageEmbeddingUtils imageEmbeddingUtils;
+    private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
+    private final BuildStringUtils buildStringUtils;
     private final String notFoundMessage = "设备不存在";
 
     @Override
@@ -37,9 +39,10 @@ public class DeviceServiceImpl implements DeviceService {
     public Device save(DeviceDTO deviceDTO) {
         Device device = toEntity(deviceDTO);
         device.setId(UUID.randomUUID().toString());
-        if (device.getImageUrls() != null && !device.getImageUrls().isEmpty()) {
-            device.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(device.getImageUrls()));
-        }
+        String embeddingText = buildStringUtils.buildDeviceEmbeddingText(device);
+        device.setMultimodalEmbedding(
+            multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, device.getImageUrls())
+        );
         return deviceRepository.save(device);
     }
 
@@ -67,9 +70,10 @@ public class DeviceServiceImpl implements DeviceService {
     @Transactional
     public Device update(DeviceDTO deviceDTO) {
         Device device = toEntity(deviceDTO);
-        if (device.getImageUrls() != null && !device.getImageUrls().isEmpty()) {
-            device.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(device.getImageUrls()));
-        }
+        String embeddingText = buildStringUtils.buildDeviceEmbeddingText(device);
+        device.setMultimodalEmbedding(
+            multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, device.getImageUrls())
+        );
         return deviceRepository.save(device);
     }
 

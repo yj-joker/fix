@@ -5,7 +5,8 @@ import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.pojo.dto.SolutionDTO;
 import ai.weixiu.repository.SolutionRepository;
 import ai.weixiu.service.SolutionService;
-import ai.weixiu.utils.ImageEmbeddingUtils;
+import ai.weixiu.utils.BuildStringUtils;
+import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -20,7 +21,8 @@ import java.util.UUID;
 public class SolutionServiceImpl implements SolutionService {
 
     private final SolutionRepository solutionRepository;
-    private final ImageEmbeddingUtils imageEmbeddingUtils;
+    private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
+    private final BuildStringUtils buildStringUtils;
     private final String notFoundMessage = "解决方案不存在";
 
     @Override
@@ -28,9 +30,10 @@ public class SolutionServiceImpl implements SolutionService {
     public Solution save(SolutionDTO solutionDTO) {
         Solution solution = toEntity(solutionDTO);
         solution.setId(UUID.randomUUID().toString());
-        if (solution.getImageUrls() != null && !solution.getImageUrls().isEmpty()) {
-            solution.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(solution.getImageUrls()));
-        }
+        String embeddingText = buildStringUtils.buildSolutionEmbeddingText(solution);
+        solution.setMultimodalEmbedding(
+            multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, solution.getImageUrls())
+        );
         return solutionRepository.save(solution);
     }
 
@@ -58,9 +61,10 @@ public class SolutionServiceImpl implements SolutionService {
     @Transactional
     public Solution update(SolutionDTO solutionDTO) {
         Solution solution = toEntity(solutionDTO);
-        if (solution.getImageUrls() != null && !solution.getImageUrls().isEmpty()) {
-            solution.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(solution.getImageUrls()));
-        }
+        String embeddingText = buildStringUtils.buildSolutionEmbeddingText(solution);
+        solution.setMultimodalEmbedding(
+            multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, solution.getImageUrls())
+        );
         return solutionRepository.save(solution);
     }
 
