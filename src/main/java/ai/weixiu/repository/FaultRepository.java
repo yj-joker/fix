@@ -72,4 +72,26 @@ ORDER BY score DESC
         @Param("minScore") double minScore // 最小分数
     );
 
+    /**
+     * 通过图片向量检索最相似的故障
+     */
+    @Query("""
+        CALL db.index.vector.queryNodes('fault_image_index', $limit, $embedding)
+        YIELD node AS f, score
+        WHERE score >= $minScore
+        RETURN f.id AS id,
+               f.name AS name,
+               f.description AS description,
+               f.category AS category,
+               f.severity AS severity,
+               f.image_urls AS imageUrls,
+               score
+        ORDER BY score DESC
+        """)
+    List<FaultVO> getFaultsByImageEmbedding(
+        @Param("embedding") List<Double> embedding,
+        @Param("limit") long limit,
+        @Param("minScore") double minScore
+    );
+
 }

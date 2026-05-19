@@ -66,4 +66,28 @@ public interface ComponentRepository extends Neo4jRepository<Component, String> 
             ORDER BY score DESC
             """)
     List<ComponentVO> getComponentByEmbedding(List<Double> embedding, Long limit, Double minScore);
+
+    /**
+     * 通过图片向量检索最相似的部件
+     */
+    @Query("""
+        CALL db.index.vector.queryNodes('component_image_index', $limit, $embedding)
+        YIELD node AS c, score
+        WHERE score >= $minScore
+        RETURN c.id AS id,
+               c.name AS name,
+               c.part_number AS partNumber,
+               c.specification AS specification,
+               c.supplier AS supplier,
+               c.lifecycle AS lifecycle,
+               c.unit_price AS unitPrice,
+               c.image_urls AS imageUrls,
+               score
+        ORDER BY score DESC
+        """)
+    List<ComponentVO> getComponentByImageEmbedding(
+        @Param("embedding") List<Double> embedding,
+        @Param("limit") Long limit,
+        @Param("minScore") Double minScore
+    );
 }
