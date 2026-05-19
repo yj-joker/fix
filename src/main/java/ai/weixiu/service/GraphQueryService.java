@@ -1,7 +1,7 @@
 package ai.weixiu.service;
 
 import ai.weixiu.pojo.PageResult;
-import ai.weixiu.pojo.query.ImageSearchQuery;
+import ai.weixiu.pojo.query.MultimodalSearchQuery;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
 
 public interface GraphQueryService {
@@ -12,7 +12,7 @@ public interface GraphQueryService {
     PageResult<DiagnosisPathVO> findDiagnosisPaths(String keyword,String ComponentDescription ,String faultDescription, int page, int size);
 
     /**
-     * 通过图片检索诊断路径
+     * 通过多模态（文字+图片）融合向量检索诊断路径
      */
-    PageResult<DiagnosisPathVO> findDiagnosisPathsByImage(ImageSearchQuery query);
+    PageResult<DiagnosisPathVO> findDiagnosisPathsByMultimodal(MultimodalSearchQuery query);
 }
