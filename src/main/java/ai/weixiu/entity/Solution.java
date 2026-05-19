@@ -49,8 +49,8 @@ public class Solution {
     @Property("image_urls")
     private List<String> imageUrls;
 
-    @Property("image_embedding")
-    private List<Double> imageEmbedding;
+    @Property("multimodal_embedding")
+    private List<Double> multimodalEmbedding;
 
     // 关系 适用于哪些故障（多对多，反向声明，故障端是 OUTGOING）
     // Solution 这边是 INCOMING：故障 --[HAS_SOLUTION]--> 解决方案

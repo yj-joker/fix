@@ -44,8 +44,8 @@ public class Device {
     @Property("image_urls")
     private List<String> imageUrls;
 
-    @Property("image_embedding")
-    private List<Double> imageEmbedding;
+    @Property("multimodal_embedding")
+    private List<Double> multimodalEmbedding;
 
     // 关系 设备拥有的部件（多对多）
     // direction = Relationship.Direction.OUTGOING 表示：设备 --[OWNS]--> 部件

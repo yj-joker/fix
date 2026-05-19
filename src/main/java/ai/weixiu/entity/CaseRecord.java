@@ -63,8 +63,8 @@ public class CaseRecord {
     @Property("image_urls")
     private List<String> imageUrls;
 
-    @Property("image_embedding")
-    private List<Double> imageEmbedding;
+    @Property("multimodal_embedding")
+    private List<Double> multimodalEmbedding;
 
     //  关系 记录了哪些故障（多对多，案例 --> 故障）
     // 案例 --[RECORDED]--> 故障

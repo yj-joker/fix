@@ -46,8 +46,8 @@ public class Component {
     @Property("image_urls")
     private List<String> imageUrls;
 
-    @Property("image_embedding")
-    private List<Double> imageEmbedding;
+    @Property("multimodal_embedding")
+    private List<Double> multimodalEmbedding;
 
     /*
      关系 被哪些设备拥有（多对多，反向声明）
