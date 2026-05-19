@@ -5,6 +5,7 @@ import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.pojo.dto.CaseRecordDTO;
 import ai.weixiu.repository.CaseRecordRepository;
 import ai.weixiu.service.CaseRecordService;
+import ai.weixiu.utils.ImageEmbeddingUtils;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ import java.util.UUID;
 public class CaseRecordServiceImpl implements CaseRecordService {
 
     private final CaseRecordRepository caseRecordRepository;
+    private final ImageEmbeddingUtils imageEmbeddingUtils;
     private final String notFoundMessage = "案例记录不存在";
 
     @Override
@@ -26,6 +28,9 @@ public class CaseRecordServiceImpl implements CaseRecordService {
     public CaseRecord save(CaseRecordDTO caseRecordDTO) {
         CaseRecord caseRecord = toEntity(caseRecordDTO);
         caseRecord.setId(UUID.randomUUID().toString());
+        if (caseRecord.getImageUrls() != null && !caseRecord.getImageUrls().isEmpty()) {
+            caseRecord.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(caseRecord.getImageUrls()));
+        }
         return caseRecordRepository.save(caseRecord);
     }
 
@@ -53,6 +58,9 @@ public class CaseRecordServiceImpl implements CaseRecordService {
     @Transactional
     public CaseRecord update(CaseRecordDTO caseRecordDTO) {
         CaseRecord caseRecord = toEntity(caseRecordDTO);
+        if (caseRecord.getImageUrls() != null && !caseRecord.getImageUrls().isEmpty()) {
+            caseRecord.setImageEmbedding(imageEmbeddingUtils.getImageEmbedding(caseRecord.getImageUrls()));
+        }
         return caseRecordRepository.save(caseRecord);
     }
 
