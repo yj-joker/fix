@@ -2,7 +2,7 @@ package ai.weixiu.controller;
 
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.Result;
-import ai.weixiu.pojo.query.ImageSearchQuery;
+import ai.weixiu.pojo.query.MultimodalSearchQuery;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
 import ai.weixiu.service.GraphQueryService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,9 +29,9 @@ public class PathController {
         return Result.success(graphQueryService.findDiagnosisPaths(keyword,componentDescription, faultDescription, page, size));
     }
 
-    @PostMapping("/image-search")
-    @Operation(summary = "通过图片检索诊断路径")
-    public Result<PageResult<DiagnosisPathVO>> searchByImage(@RequestBody ImageSearchQuery query) {
-        return Result.success(graphQueryService.findDiagnosisPathsByImage(query));
+    @PostMapping("/multimodal-search")
+    @Operation(summary = "通过文字+图片多模态融合检索诊断路径")
+    public Result<PageResult<DiagnosisPathVO>> searchByMultimodal(@RequestBody MultimodalSearchQuery query) {
+        return Result.success(graphQueryService.findDiagnosisPathsByMultimodal(query));
     }
 }
