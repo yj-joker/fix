@@ -115,6 +115,11 @@ public class FaultServiceImpl implements FaultService {
         return faultRepository.getFaultsByEmbedding(embedding,limit,minScore);
     }
 
+    @Override
+    public List<FaultVO> getFaultByMultimodalEmbedding(List<Double> embedding, Long limit, Double minScore) {
+        return faultRepository.getFaultsByMultimodalEmbedding(embedding, limit, minScore);
+    }
+
     /**
      * 将 DTO 转换为实体
      */

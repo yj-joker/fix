@@ -111,59 +111,86 @@ public class GraphQueryServiceImpl implements GraphQueryService {
 
     @Override
     public PageResult<DiagnosisPathVO> findDiagnosisPathsByMultimodal(MultimodalSearchQuery query) {
-        // 1. 调 Python 拿融合向量（文字 + 图片）
-        List<Double> vector = multimodalEmbeddingUtils.getMultimodalEmbedding(
-            query.getText(), query.getImageUrls()
-        );
-        if (vector == null || vector.isEmpty()) {
-            return emptyResult(0, query.getLimit());
+        int safePage = Math.max(query.getPage(), 0);
+        int safeSize = Math.max(query.getSize(), 5);
+        int skip = safePage * safeSize;
+        long searchLimit = 10L;
+        double minScore = query.getMinScore();
+
+        boolean hasText = hasText(query.getText());
+        boolean hasImages = query.getImageUrls() != null && !query.getImageUrls().isEmpty();
+
+        if (!hasText && !hasImages) {
+            return emptyResult(safePage, safeSize);
         }
 
-        // 2. 用融合向量在 Fault 的 multimodalEmbedding 索引中检索
-        List<DiagnosisPathVO> records = neo4jClient.query("""
-                CALL db.index.vector.queryNodes('fault_multimodal_index', $limit, $vector)
-                YIELD node AS f, score
-                WHERE score >= $minScore
-                OPTIONAL MATCH (c:Component)-[:CAUSES]->(f)
-                OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
-                OPTIONAL MATCH (d:Device)-[:OWNS]->(c)
-                RETURN d.id AS deviceId,
-                       d.name AS deviceName,
-                       c.id AS componentId,
-                       c.name AS componentName,
-                       f.id AS faultId,
-                       f.name AS faultName,
-                       f.severity AS faultSeverity,
-                       f.image_urls AS faultImageUrls,
-                       s.id AS solutionId,
-                       s.title AS solutionTitle,
-                       s.estimated_time AS estimatedTime,
-                       s.verified AS verified,
-                       score
-                ORDER BY score DESC, s.verified DESC
-                LIMIT $limit
-                """)
-                .bind(vector).to("vector")
-                .bind(query.getLimit()).to("limit")
-                .bind(query.getMinScore()).to("minScore")
-                .fetchAs(DiagnosisPathVO.class)
-                .mappedBy((ctx, record) -> {
-                    DiagnosisPathVO vo = mapDiagnosisPath(record);
-                    vo.setFaultScore(record.get("score").isNull() ? null : record.get("score").asDouble());
-                    if (!record.get("faultImageUrls").isNull()) {
-                        vo.setFaultImageUrls(record.get("faultImageUrls").asList(org.neo4j.driver.Value::asString));
-                    }
-                    return vo;
-                })
-                .all()
-                .stream()
-                .toList();
+        // 图片 → 多模态向量（只算一次）
+        List<Double> multimodalVector = null;
+        if (hasImages) {
+            multimodalVector = multimodalEmbeddingUtils.getMultimodalEmbedding(null, query.getImageUrls());
+        }
+
+        // ===== 收集 Fault IDs 和 scores =====
+        Map<String, Double> faultScoreMap = new HashMap<>();
+
+        // 文字 → Fault 纯文本索引
+        if (hasText) {
+            List<FaultVO> textFaults = faultService.getFaultByEmbedding(query.getText(), searchLimit, minScore);
+            for (FaultVO f : textFaults) {
+                faultScoreMap.merge(f.getId(), f.getScore(), Math::max);
+            }
+        }
+
+        // 图片 → Fault 多模态索引
+        if (multimodalVector != null && !multimodalVector.isEmpty()) {
+            List<FaultVO> imgFaults = faultService.getFaultByMultimodalEmbedding(multimodalVector, searchLimit, minScore);
+            for (FaultVO f : imgFaults) {
+                faultScoreMap.merge(f.getId(), f.getScore(), Math::max);
+            }
+        }
+
+        // ===== 收集 Component IDs 和 scores =====
+        Map<String, Double> componentScoreMap = new HashMap<>();
+
+        // 文字 → Component 纯文本索引
+        if (hasText) {
+            List<ComponentVO> textComponents = componentService.getComponentByEmbedding(query.getText(), searchLimit, minScore);
+            for (ComponentVO c : textComponents) {
+                componentScoreMap.merge(c.getId(), c.getScore(), Math::max);
+            }
+        }
+
+        // 图片 → Component 多模态索引
+        if (multimodalVector != null && !multimodalVector.isEmpty()) {
+            List<ComponentVO> imgComponents = componentService.getComponentByMultimodalEmbedding(multimodalVector, searchLimit, minScore);
+            for (ComponentVO c : imgComponents) {
+                componentScoreMap.merge(c.getId(), c.getScore(), Math::max);
+            }
+        }
+
+        List<String> faultIds = faultScoreMap.isEmpty() ? null : new ArrayList<>(faultScoreMap.keySet());
+        List<String> componentIds = componentScoreMap.isEmpty() ? null : new ArrayList<>(componentScoreMap.keySet());
+
+        if (faultIds == null && componentIds == null) {
+            return emptyResult(safePage, safeSize);
+        }
+
+        // ===== 复用通用图谱路径查询 =====
+        List<DiagnosisPathVO> records = queryPaths(null, componentIds, faultIds, skip, safeSize);
+        Long total = queryPathsTotal(null, componentIds, faultIds);
 
         for (DiagnosisPathVO vo : records) {
+            vo.setFaultScore(faultScoreMap.get(vo.getFaultId()));
+            vo.setComponentScore(componentScoreMap.get(vo.getComponentId()));
             vo.setPathText(buildPathText(vo));
         }
 
-        return pageResult(records, (long) records.size(), 0, query.getLimit());
+        log.info("多模态路径查询: text={} images={} faults={} components={} found={}",
+                hasText, hasImages,
+                faultIds != null ? faultIds.size() : 0,
+                componentIds != null ? componentIds.size() : 0,
+                records.size());
+        return pageResult(records, total, safePage, safeSize);
     }
 
     // ===== 通用查询方法 =====
@@ -323,25 +350,6 @@ public class GraphQueryServiceImpl implements GraphQueryService {
             vo.setVerified(best.getVerified());
         }
 
-        return vo;
-    }
-
-    /**
-     * 旧映射方法 — 供 findDiagnosisPathsByMultimodal 继续使用（Task 3 会重构）。
-     */
-    private DiagnosisPathVO mapDiagnosisPath(org.neo4j.driver.Record record) {
-        DiagnosisPathVO vo = new DiagnosisPathVO();
-        vo.setDeviceId(record.get("deviceId").asString(null));
-        vo.setDeviceName(record.get("deviceName").asString(null));
-        vo.setComponentId(record.get("componentId").asString(null));
-        vo.setComponentName(record.get("componentName").asString(null));
-        vo.setFaultId(record.get("faultId").asString(null));
-        vo.setFaultName(record.get("faultName").asString(null));
-        vo.setFaultSeverity(record.get("faultSeverity").asString(null));
-        vo.setSolutionId(record.get("solutionId").asString(null));
-        vo.setSolutionTitle(record.get("solutionTitle").asString(null));
-        vo.setEstimatedTime(record.get("estimatedTime").isNull() ? null : record.get("estimatedTime").asInt());
-        vo.setVerified(record.get("verified").isNull() ? null : record.get("verified").asBoolean());
         return vo;
     }
 

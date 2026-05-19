@@ -45,4 +45,9 @@ public interface ComponentService {
     * embedding查询部件
     * */
     List<ComponentVO> getComponentByEmbedding(String description, Long limit, Double minScore);
+
+    /**
+     * 通过多模态融合向量检索最相似的部件
+     */
+    List<ComponentVO> getComponentByMultimodalEmbedding(List<Double> embedding, Long limit, Double minScore);
 }

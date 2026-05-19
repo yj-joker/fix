@@ -112,6 +112,11 @@ public class ComponentServiceImpl implements ComponentService {
         return componentRepository.getComponentByEmbedding(embedding, limit, minScore);
     }
 
+    @Override
+    public List<ComponentVO> getComponentByMultimodalEmbedding(List<Double> embedding, Long limit, Double minScore) {
+        return componentRepository.getComponentByMultimodalEmbedding(embedding, limit, minScore);
+    }
+
     private List<Double> getEmbedding(Component component) {
         String textToEmbed = buildStringUtils.buildComponentEmbeddingText(component);
         return embeddingUtils.getEmbedding(textToEmbed);

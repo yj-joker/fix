@@ -46,4 +46,9 @@ public interface FaultService {
     * 根据用户描述返回最匹配的故障id
     * */
     List<FaultVO> getFaultByEmbedding(String description, Long limit, Double minScore);
+
+    /**
+     * 通过多模态融合向量检索最相似的故障
+     */
+    List<FaultVO> getFaultByMultimodalEmbedding(List<Double> embedding, Long limit, Double minScore);
 }
