@@ -43,6 +43,12 @@ public class Component {
     @Property("embedding")
     private List<Double> embedding;
 
+    @Property("image_urls")
+    private List<String> imageUrls;
+
+    @Property("image_embedding")
+    private List<Double> imageEmbedding;
+
     /*
      关系 被哪些设备拥有（多对多，反向声明）
      direction = Relationship.Direction.INCOMING 表示：设备 --[OWNS]--> 部件

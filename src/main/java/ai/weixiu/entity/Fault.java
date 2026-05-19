@@ -46,6 +46,12 @@ public class Fault {
     @Property("embedding")//维修向量
     private List<Double> embedding;
 
+    @Property("image_urls")
+    private List<String> imageUrls;
+
+    @Property("image_embedding")
+    private List<Double> imageEmbedding;
+
     // 关系 涉及哪些部件（多对多，部件 --> 故障，故障端是 INCOMING）
 //    @Relationship(type = "CAUSES", direction = Relationship.Direction.INCOMING)
 //    @Builder.Default

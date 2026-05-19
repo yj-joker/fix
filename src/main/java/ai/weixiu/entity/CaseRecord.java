@@ -8,6 +8,7 @@ import org.springframework.data.neo4j.core.support.UUIDStringGenerator;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Data
@@ -58,6 +59,12 @@ public class CaseRecord {
 
     @Property("tags")//标签（如 液压,电机,紧急）
     private String tags;
+
+    @Property("image_urls")
+    private List<String> imageUrls;
+
+    @Property("image_embedding")
+    private List<Double> imageEmbedding;
 
     //  关系 记录了哪些故障（多对多，案例 --> 故障）
     // 案例 --[RECORDED]--> 故障

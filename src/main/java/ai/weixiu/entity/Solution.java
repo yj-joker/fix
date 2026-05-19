@@ -9,6 +9,7 @@ import org.springframework.data.neo4j.core.support.UUIDStringGenerator;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Data
@@ -44,6 +45,12 @@ public class Solution {
 
     @Property("verified")// 是否已验证有效
     private Boolean verified;
+
+    @Property("image_urls")
+    private List<String> imageUrls;
+
+    @Property("image_embedding")
+    private List<Double> imageEmbedding;
 
     // 关系 适用于哪些故障（多对多，反向声明，故障端是 OUTGOING）
     // Solution 这边是 INCOMING：故障 --[HAS_SOLUTION]--> 解决方案

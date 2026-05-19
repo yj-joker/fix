@@ -9,6 +9,7 @@ import org.springframework.data.neo4j.core.support.UUIDStringGenerator;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 
@@ -39,6 +40,12 @@ public class Device {
 
     @Property("manufacturer")//制造商
     private String manufacturer;
+
+    @Property("image_urls")
+    private List<String> imageUrls;
+
+    @Property("image_embedding")
+    private List<Double> imageEmbedding;
 
     // 关系 设备拥有的部件（多对多）
     // direction = Relationship.Direction.OUTGOING 表示：设备 --[OWNS]--> 部件
