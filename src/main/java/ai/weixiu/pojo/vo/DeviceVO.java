@@ -3,6 +3,7 @@ package ai.weixiu.pojo.vo;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class DeviceVO {
@@ -13,4 +14,5 @@ public class DeviceVO {
     private String location;
     private LocalDateTime purchaseDate;
     private String manufacturer;
+    private List<String> imageUrls;
 }

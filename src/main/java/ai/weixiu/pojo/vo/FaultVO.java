@@ -3,6 +3,7 @@ package ai.weixiu.pojo.vo;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class FaultVO {
@@ -14,5 +15,6 @@ public class FaultVO {
     private String category;
     private LocalDateTime occurrenceTime;
     private String reportedBy;
+    private List<String> imageUrls;
     private Double score;
 }

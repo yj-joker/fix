@@ -4,6 +4,7 @@ import lombok.Data;
 import org.springframework.data.neo4j.core.schema.Id;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class DeviceDTO {
@@ -15,4 +16,5 @@ public class DeviceDTO {
     private String location;
     private LocalDateTime purchaseDate;
     private String manufacturer;
+    private List<String> imageUrls;
 }

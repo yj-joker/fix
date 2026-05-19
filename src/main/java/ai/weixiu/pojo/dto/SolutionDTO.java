@@ -2,6 +2,8 @@ package ai.weixiu.pojo.dto;
 
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class SolutionDTO {
     private String id;
@@ -12,4 +14,5 @@ public class SolutionDTO {
     private Integer estimatedTime;
     private String difficulty;
     private Boolean verified;
+    private List<String> imageUrls;
 }

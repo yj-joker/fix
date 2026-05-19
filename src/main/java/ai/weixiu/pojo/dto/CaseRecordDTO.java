@@ -3,6 +3,7 @@ package ai.weixiu.pojo.dto;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class CaseRecordDTO {
@@ -19,4 +20,5 @@ public class CaseRecordDTO {
     private String recorder;
     private String reviewedBy;
     private String tags;
+    private List<String> imageUrls;
 }

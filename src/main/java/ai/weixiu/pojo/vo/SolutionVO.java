@@ -3,6 +3,7 @@ package ai.weixiu.pojo.vo;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class SolutionVO {
@@ -15,4 +16,5 @@ public class SolutionVO {
     private String difficulty;
     private LocalDateTime createdAt;
     private Boolean verified;
+    private List<String> imageUrls;
 }

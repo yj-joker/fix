@@ -2,6 +2,8 @@ package ai.weixiu.pojo.dto;
 
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class ComponentDTO {
     private String id;
@@ -11,4 +13,5 @@ public class ComponentDTO {
     private String supplier;
     private String lifecycle;
     private Double unitPrice;
+    private List<String> imageUrls;
 }

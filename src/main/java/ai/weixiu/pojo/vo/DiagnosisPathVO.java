@@ -2,6 +2,8 @@ package ai.weixiu.pojo.vo;
 
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class DiagnosisPathVO {
     private String deviceId; // 设备ID
@@ -17,6 +19,9 @@ public class DiagnosisPathVO {
     private String solutionTitle; // 解决方案标题
     private Integer estimatedTime; // 预计解决时间
     private Boolean verified; // 是否经过验证
+
+    private List<String> faultImageUrls; // 故障图片
+    private List<String> componentImageUrls; // 部件图片
 
     private String pathText; // 诊断路径文本
     private Double faultScore; // 故障分数
