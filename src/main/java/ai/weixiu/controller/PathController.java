@@ -2,6 +2,7 @@ package ai.weixiu.controller;
 
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.Result;
+import ai.weixiu.pojo.query.ImageSearchQuery;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
 import ai.weixiu.service.GraphQueryService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -26,5 +27,11 @@ public class PathController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         return Result.success(graphQueryService.findDiagnosisPaths(keyword,componentDescription, faultDescription, page, size));
+    }
+
+    @PostMapping("/image-search")
+    @Operation(summary = "通过图片检索诊断路径")
+    public Result<PageResult<DiagnosisPathVO>> searchByImage(@RequestBody ImageSearchQuery query) {
+        return Result.success(graphQueryService.findDiagnosisPathsByImage(query));
     }
 }
