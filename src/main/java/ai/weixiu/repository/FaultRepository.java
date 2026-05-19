@@ -73,10 +73,10 @@ ORDER BY score DESC
     );
 
     /**
-     * 通过图片向量检索最相似的故障
+     * 通过多模态融合向量检索最相似的故障
      */
     @Query("""
-        CALL db.index.vector.queryNodes('fault_image_index', $limit, $embedding)
+        CALL db.index.vector.queryNodes('fault_multimodal_index', $limit, $embedding)
         YIELD node AS f, score
         WHERE score >= $minScore
         RETURN f.id AS id,
@@ -88,7 +88,7 @@ ORDER BY score DESC
                score
         ORDER BY score DESC
         """)
-    List<FaultVO> getFaultsByImageEmbedding(
+    List<FaultVO> getFaultsByMultimodalEmbedding(
         @Param("embedding") List<Double> embedding,
         @Param("limit") long limit,
         @Param("minScore") double minScore
