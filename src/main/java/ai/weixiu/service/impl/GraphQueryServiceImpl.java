@@ -1,6 +1,7 @@
 package ai.weixiu.service.impl;
 
 import ai.weixiu.pojo.PageResult;
+import ai.weixiu.pojo.query.ImageSearchQuery;
 import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.DeviceVO;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
@@ -9,6 +10,7 @@ import ai.weixiu.repository.DeviceRepository;
 import ai.weixiu.service.ComponentService;
 import ai.weixiu.service.FaultService;
 import ai.weixiu.service.GraphQueryService;
+import ai.weixiu.utils.ImageEmbeddingUtils;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
@@ -28,6 +30,7 @@ public class GraphQueryServiceImpl implements GraphQueryService {
     private final DeviceRepository deviceRepository;
     private final FaultService faultService;
     private final ComponentService componentService;
+    private final ImageEmbeddingUtils imageEmbeddingUtils;
 
     /*
      * 根据设备线索、部件线索、故障描述，分页查询 RAG 图谱证据链。
@@ -197,6 +200,62 @@ public class GraphQueryServiceImpl implements GraphQueryService {
 
         log.info("此次找到的诊断路径: {}", records);
         return pageResult(records, total, safePage, safeSize);
+    }
+
+    @Override
+    public PageResult<DiagnosisPathVO> findDiagnosisPathsByImage(ImageSearchQuery query) {
+        // 1. 调 Python 拿图片向量
+        List<Double> imageVector = imageEmbeddingUtils.getImageEmbedding(query.getImageUrls());
+        if (imageVector == null || imageVector.isEmpty()) {
+            return emptyResult(0, query.getLimit());
+        }
+
+        // 2. 用图片向量在 Fault 的 imageEmbedding 索引中检索
+        List<DiagnosisPathVO> records = neo4jClient.query("""
+                CALL db.index.vector.queryNodes('fault_image_index', $limit, $vector)
+                YIELD node AS f, score
+                WHERE score >= $minScore
+                OPTIONAL MATCH (c:Component)-[:CAUSES]->(f)
+                OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
+                OPTIONAL MATCH (d:Device)-[:OWNS]->(c)
+                RETURN d.id AS deviceId,
+                       d.name AS deviceName,
+                       c.id AS componentId,
+                       c.name AS componentName,
+                       f.id AS faultId,
+                       f.name AS faultName,
+                       f.severity AS faultSeverity,
+                       f.image_urls AS faultImageUrls,
+                       s.id AS solutionId,
+                       s.title AS solutionTitle,
+                       s.estimated_time AS estimatedTime,
+                       s.verified AS verified,
+                       score
+                ORDER BY score DESC, s.verified DESC
+                LIMIT $limit
+                """)
+                .bind(imageVector).to("vector")
+                .bind(query.getLimit()).to("limit")
+                .bind(query.getMinScore()).to("minScore")
+                .fetchAs(DiagnosisPathVO.class)
+                .mappedBy((ctx, record) -> {
+                    DiagnosisPathVO vo = mapDiagnosisPath(record);
+                    vo.setFaultScore(record.get("score").isNull() ? null : record.get("score").asDouble());
+                    // 解析 faultImageUrls
+                    if (!record.get("faultImageUrls").isNull()) {
+                        vo.setFaultImageUrls(record.get("faultImageUrls").asList(org.neo4j.driver.Value::asString));
+                    }
+                    return vo;
+                })
+                .all()
+                .stream()
+                .toList();
+
+        for (DiagnosisPathVO vo : records) {
+            vo.setPathText(buildPathText(vo));
+        }
+
+        return pageResult(records, (long) records.size(), 0, query.getLimit());
     }
 
     /*
