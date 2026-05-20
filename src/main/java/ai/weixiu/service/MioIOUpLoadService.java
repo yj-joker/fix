@@ -12,4 +12,6 @@ public interface MioIOUpLoadService {
 
     void delete(String objectName, BucketEnum bucket);
 
+    String getObjectName(MultipartFile file, String name);
+
 }

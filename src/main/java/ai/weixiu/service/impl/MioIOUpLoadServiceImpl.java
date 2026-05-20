@@ -46,8 +46,6 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
         };
     }
 
-
-
     @Override
     public InputStream download(String objectName, BucketEnum bucket) {
         try {
@@ -78,14 +76,40 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
             throw new RuntimeException("文件删除失败", e);
         }
     }
+    @Override
+    public @NonNull String getObjectName(MultipartFile file, String name) {
+        try {
+            // 生成唯一文件名，避免覆盖
+            String originalFilename = file.getOriginalFilename();
+            String ext = "";
+            if (originalFilename != null && originalFilename.contains(".")) {
+                ext = originalFilename.substring(originalFilename.lastIndexOf("."));
+            }
+            String objectName = UUID.randomUUID().toString().replace("-", "") + ext;
+
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(name)
+                            .object(objectName)
+                            .stream(file.getInputStream(), file.getSize(), -1)
+                            .contentType(file.getContentType())
+                            .build()
+            );
+            log.info("文件上传成功: {}", objectName);
+            return objectName;
+        } catch (Exception e) {
+            log.error("文件上传失败: {}", e.getMessage());
+            throw new UploadException("文件上传失败");
+        }
+    }
     private String uploadPrivateFile(MultipartFile file, String name) {
-        String upload = upload(file, name);
-        return getPresignedUrl(upload,name,120);
+        String objectName = getObjectName(file, name);
+        return getPresignedUrl(objectName,name,120);
     }
 
     private String uploadPublicFile(MultipartFile file, String name) {
-        String upload = upload(file, name);
-        return getFileUrl(upload, name);
+        String objectName = getObjectName(file, name);
+        return getFileUrl(objectName, name);
     }
 
 
@@ -119,31 +143,7 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
     /*
     * 上传图片
     * */
-    private @NonNull String upload(MultipartFile file, String name) {
-        try {
-            // 生成唯一文件名，避免覆盖
-            String originalFilename = file.getOriginalFilename();
-            String ext = "";
-            if (originalFilename != null && originalFilename.contains(".")) {
-                ext = originalFilename.substring(originalFilename.lastIndexOf("."));
-            }
-            String objectName = UUID.randomUUID().toString().replace("-", "") + ext;
 
-            minioClient.putObject(
-                    PutObjectArgs.builder()
-                            .bucket(name)
-                            .object(objectName)
-                            .stream(file.getInputStream(), file.getSize(), -1)
-                            .contentType(file.getContentType())
-                            .build()
-            );
-            log.info("文件上传成功: {}", objectName);
-            return objectName;
-        } catch (Exception e) {
-            log.error("文件上传失败: {}", e.getMessage());
-            throw new UploadException("文件上传失败");
-        }
-    }
     private void ensureBucketExists(String bucketName) {
         try {
             boolean exists = minioClient.bucketExists(

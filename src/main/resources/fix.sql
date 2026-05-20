@@ -107,7 +107,7 @@ ALTER TABLE memory_preference ADD COLUMN source_type VARCHAR(20) DEFAULT 'inferr
 
 
 CREATE TABLE maintenance_manual (
-                                    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+                                    id BIGINT PRIMARY KEY COMMENT '主键ID',
 
                                     manual_name VARCHAR(255) NOT NULL COMMENT '手册名称',
                                     manual_image VARCHAR(255) NOT NULL COMMENT '手册封面',
