@@ -2,25 +2,37 @@ package ai.weixiu.utils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.minio.GetObjectArgs;
+import io.minio.MinioClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import io.netty.channel.ChannelOption;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import reactor.netty.http.client.HttpClient;
+
+import java.io.InputStream;
+import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 多模态融合向量化工具
+ * 多模态向量化工具（不融合）
  *
  * 调用 Python 端的 /ai/embedding/multimodal 接口，
- * 将实体的文字描述 + 图片 URL 融合为单个向量。
+ * 将文字描述或图片 URL 向量化为 1024 维向量。
+ * 传 text 或 imageUrls 之一，Python 端不做融合：
+ * - 有图片 → 返回图片向量（多张取均值）
+ * - 无图片 → 返回文本在多模态空间的向量
  *
- * 向量由 multimodal-embedding-v1 模型生成（1024维），
+ * 向量由 qwen2.5-vl-embedding 模型生成（1024维），
  * 文字和图片在同一语义空间，支持跨模态检索。
  */
 @Component
@@ -29,23 +41,37 @@ public class MultimodalEmbeddingUtils {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+    private final MinioClient minioClient;
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration TIMEOUT = Duration.ofSeconds(120);
 
     public MultimodalEmbeddingUtils(
-            @Value("${ai.python-service-url:http://localhost:5000}") String pythonServiceUrl,
-            ObjectMapper objectMapper
+            @Value("${ai.python-service-url:http://localhost:8000}") String pythonServiceUrl,
+            ObjectMapper objectMapper,
+            MinioClient minioClient
     ) {
-        this.webClient = WebClient.create(pythonServiceUrl);
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
+                .responseTimeout(Duration.ofSeconds(120));
+        this.webClient = WebClient.builder()
+                .baseUrl(pythonServiceUrl)
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .codecs(cfg -> cfg.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .build();
         this.objectMapper = objectMapper;
+        this.minioClient = minioClient;
     }
 
     /**
-     * 将文字描述 + 图片 URL 融合为单个向量
+     * 将文字描述或图片 URL 向量化为多模态向量（1024维，不融合）
+     * <p>
+     * 传 text 或 imageUrls 之一：
+     * - 有图片时传 imageUrls（text 会被 Python 端忽略）
+     * - 无图片时传 text（映射到多模态空间）
      *
-     * @param text      实体的文字描述（如故障名称+描述+类别等拼接文本）
+     * @param text      实体的文字描述，无图片时使用此参数
      * @param imageUrls 图片 URL 列表（MinIO 地址），可为 null 或空
-     * @return 融合向量，如果输入均为空或调用失败返回 null
+     * @return 多模态向量，如果输入均为空或调用失败返回 null
      */
     public List<Double> getMultimodalEmbedding(String text, List<String> imageUrls) {
         boolean hasText = text != null && !text.isBlank();
@@ -61,7 +87,10 @@ public class MultimodalEmbeddingUtils {
                 body.put("text", text);
             }
             if (hasImages) {
-                body.put("image_urls", imageUrls);
+                List<String> base64List = downloadImagesToBase64(imageUrls);
+                if (!base64List.isEmpty()) {
+                    body.put("image_base64s", base64List);
+                }
             }
 
             String response = webClient.post()
@@ -76,7 +105,7 @@ public class MultimodalEmbeddingUtils {
             JsonNode vectorNode = root.get("vector");
 
             if (vectorNode == null || !vectorNode.isArray() || vectorNode.isEmpty()) {
-                log.warn("多模态融合向量化返回为空");
+                log.warn("多模态向量化返回为空");
                 return null;
             }
 
@@ -87,8 +116,52 @@ public class MultimodalEmbeddingUtils {
             return vector;
 
         } catch (Exception e) {
-            log.error("多模态融合向量化失败: {}", e.getMessage());
+            log.error("多模态向量化失败: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 从 MinIO 下载图片并转为 base64 data URI
+     * URL 格式: http://localhost:9000/bucket-name/objectName.jpg
+     */
+    private List<String> downloadImagesToBase64(List<String> imageUrls) {
+        List<String> base64List = new ArrayList<>();
+        for (String url : imageUrls) {
+            try {
+                // 从 URL 中解析 bucket 和 objectName
+                // 格式: http://host:port/bucket/objectName
+                URI uri = URI.create(url);
+                String path = uri.getPath(); // /bucket/objectName
+                int firstSlash = path.indexOf('/', 1);
+                String bucket = path.substring(1, firstSlash);
+                String objectName = path.substring(firstSlash + 1);
+
+                try (InputStream is = minioClient.getObject(
+                        GetObjectArgs.builder()
+                                .bucket(bucket)
+                                .object(objectName)
+                                .build()
+                )) {
+                    byte[] bytes = is.readAllBytes();
+                    String contentType = guessContentType(objectName);
+                    String b64 = Base64.getEncoder().encodeToString(bytes);
+                    base64List.add("data:" + contentType + ";base64," + b64);
+                    log.debug("图片转 base64 成功: {} ({}KB)", objectName, bytes.length / 1024);
+                }
+            } catch (Exception e) {
+                log.warn("图片下载转 base64 失败，跳过: {} error={}", url, e.getMessage());
+            }
+        }
+        return base64List;
+    }
+
+    private static String guessContentType(String objectName) {
+        String lower = objectName.toLowerCase();
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".bmp")) return "image/bmp";
+        return "image/jpeg";
     }
 }

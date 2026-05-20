@@ -1,5 +1,6 @@
 package ai.weixiu;
 
+import ai.weixiu.pojo.query.DiagnosisSearchQuery;
 import ai.weixiu.pojo.vo.GraphRagResultVO;
 import ai.weixiu.entity.User;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
@@ -30,8 +31,12 @@ private  GraphQueryService graphQueryService;
         ragResultVO.setQuestion("发动机损坏了怎么办");
         ragResultVO.setDeviceKeyword("发动机");
         ragResultVO.setMatchedFaults(new ArrayList<>());
-        List<DiagnosisPathVO> records = graphQueryService.findDiagnosisPaths("发动机",
-                "", "发动机损坏",1, 10).getRecords();
+        DiagnosisSearchQuery searchQuery = new DiagnosisSearchQuery();
+        searchQuery.setKeyword("发动机");
+        searchQuery.setFaultDescription("发动机损坏");
+        searchQuery.setPage(1);
+        searchQuery.setSize(10);
+        List<DiagnosisPathVO> records = graphQueryService.searchDiagnosisPaths(searchQuery).getRecords();
         ragResultVO.setDiagnosisPaths(records);
         ragResultVO.setContext(buildStringUtils.buildGraphContextAssembler(ragResultVO));
         System.out.println(ragResultVO.getContext());

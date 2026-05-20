@@ -13,7 +13,9 @@
       "WebFetch(domain:github.com)",
       "mcp__MiniMax__understand_image",
       "Bash(mvn compile *)",
-      "Bash(powershell *)"
+      "Bash(powershell *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\javaWeb\\\\daima\\\\weixiu\" -Directory)",
+      "Bash(Select-Object Name)"
     ]
   }
 }

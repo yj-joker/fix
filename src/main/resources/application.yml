@@ -65,6 +65,8 @@ aliyun:
     access-key-id: ${OSS_ACCESS_KEY_ID}
     access-key-secret: ${OSS_ACCESS_KEY_SECRET}
 apikey: ${APIKEY}
+ai:
+  python-service-url: http://localhost:8000
 baidu:
   speech:
     app-id: ${BAIDU_APP_ID}

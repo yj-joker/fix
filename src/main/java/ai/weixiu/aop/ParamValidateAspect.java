@@ -14,7 +14,7 @@ import java.util.Arrays;
  * 自动校验controller层所有方法的参数是否合法。
  */
 @Aspect
-@Component
+//@Component
 @Slf4j
 public class ParamValidateAspect {
 

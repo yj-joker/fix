@@ -1,18 +1,17 @@
 package ai.weixiu.service;
 
 import ai.weixiu.pojo.PageResult;
-import ai.weixiu.pojo.query.MultimodalSearchQuery;
+import ai.weixiu.pojo.query.DiagnosisSearchQuery;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
 
 public interface GraphQueryService {
 
     /**
-     * 分页查询诊断路径
+     * 统一诊断路径查询
+     * <p>
+     * 根据 keyword（设备模糊匹配）、faultDescription（故障向量）、
+     * componentDescription（部件向量）、imageUrls（图片向量）分别检索，
+     * ID 层面合并去重后，通过 OR 匹配 + 多维度评分排序返回路径。
      */
-    PageResult<DiagnosisPathVO> findDiagnosisPaths(String keyword,String ComponentDescription ,String faultDescription, int page, int size);
-
-    /**
-     * 通过多模态（文字+图片）融合向量检索诊断路径
-     */
-    PageResult<DiagnosisPathVO> findDiagnosisPathsByMultimodal(MultimodalSearchQuery query);
+    PageResult<DiagnosisPathVO> searchDiagnosisPaths(DiagnosisSearchQuery query);
 }

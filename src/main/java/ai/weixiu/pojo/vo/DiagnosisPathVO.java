@@ -30,8 +30,9 @@ public class DiagnosisPathVO {
     private List<String> componentImageUrls; // 部件图片
 
     private String pathText; // 诊断路径文本
-    private Double faultScore; // 故障分数
-    private Double componentScore; // 部件分数
+    private Double faultScore; // 故障向量匹配分数
+    private Double componentScore; // 部件向量匹配分数
+    private Integer matchScore; // 多维度匹配评分（匹配维度越多越高）
 
     @Data
     @AllArgsConstructor

@@ -9,6 +9,7 @@ import ai.weixiu.pojo.query.DeviceQuery;
 import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.DeviceOverviewVO;
 import ai.weixiu.service.DeviceService;
+import ai.weixiu.utils.CreateEntityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 public class DeviceController {
 
     private final DeviceService deviceService;
+    private final CreateEntityUtils createEntityUtils;
 
     @PostMapping("/save")
     @Operation(summary = "新增设备")
@@ -50,4 +52,11 @@ public class DeviceController {
     public Result<PageResult<ComponentVO>> getComponents(@RequestBody DeviceQuery deviceQuery) {
         return Result.success(deviceService.getComponents(deviceQuery));
      }
+
+    @PostMapping("/generate-test-data")
+    @Operation(summary = "生成200个测试知识图谱实体（含向量和关系）")
+    public Result<String> generateTestData() {
+        createEntityUtils.generateTestData();
+        return Result.success("测试数据生成完成");
+    }
 }

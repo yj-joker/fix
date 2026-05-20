@@ -104,3 +104,27 @@ ALTER TABLE memory_fact ADD INDEX idx_user_status (user_id, status);
 # explicit = 用户直接说出来的（如"不要写注释"），高可信度
 # inferred = 从行为推断的（如反复追问细节），需多次确认
 ALTER TABLE memory_preference ADD COLUMN source_type VARCHAR(20) DEFAULT 'inferred' COMMENT 'explicit=用户明说, inferred=从行为推断';
+
+
+CREATE TABLE maintenance_manual (
+                                    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+
+                                    manual_name VARCHAR(255) NOT NULL COMMENT '手册名称',
+                                    manual_image VARCHAR(255) NOT NULL COMMENT '手册封面',
+                                    manual_desc VARCHAR(500) NULL COMMENT '手册描述',
+
+                                    file_name VARCHAR(255) NOT NULL COMMENT '原始文件名',
+                                    file_type VARCHAR(20) NOT NULL COMMENT '文件类型，如 pdf、doc、docx',
+                                    file_size BIGINT NOT NULL DEFAULT 0 COMMENT '文件大小，单位字节',
+                                    minio_object_name VARCHAR(500) NOT NULL COMMENT 'MinIO对象名',
+
+                                    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-过时，1-正常',
+
+                                    created_by_id BIGINT NULL COMMENT '上传人ID',
+
+                                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+                                    INDEX idx_status (status),
+                                    INDEX idx_created_at (created_at)
+) COMMENT='维修手册表';
