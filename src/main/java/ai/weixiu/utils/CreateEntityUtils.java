@@ -348,9 +348,9 @@ public class CreateEntityUtils {
                         hasImages ? f.getImageUrls() : null
                 );
                 f.setMultimodalEmbedding(multiVec);
-                log.debug("Fault[{}] 向量完成: {} (hasImage={})", i, f.getName(), hasImages);
+                log.debug("故障[{}] 向量完成: {} (含图片={})", i, f.getName(), hasImages);
             } catch (Exception e) {
-                log.warn("Fault[{}] 向量失败: {} - {}", i, f.getName(), e.getMessage());
+                log.warn("故障[{}] 向量失败: {} - {}", i, f.getName(), e.getMessage());
             }
             sleepBetweenApiCalls();
         }
@@ -372,9 +372,9 @@ public class CreateEntityUtils {
                         hasImages ? c.getImageUrls() : null
                 );
                 c.setMultimodalEmbedding(multiVec);
-                log.debug("Component[{}] 向量完成: {} (hasImage={})", i, c.getName(), hasImages);
+                log.debug("部件[{}] 向量完成: {} (含图片={})", i, c.getName(), hasImages);
             } catch (Exception e) {
-                log.warn("Component[{}] 向量失败: {} - {}", i, c.getName(), e.getMessage());
+                log.warn("部件[{}] 向量失败: {} - {}", i, c.getName(), e.getMessage());
             }
             sleepBetweenApiCalls();
         }

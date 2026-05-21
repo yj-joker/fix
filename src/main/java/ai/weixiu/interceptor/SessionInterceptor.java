@@ -51,7 +51,7 @@ public class SessionInterceptor implements HandlerInterceptor {
         redisTemplate.expire("User:SessionId:" + sessionId, 1, TimeUnit.DAYS);
         //将当前用户的 id保存到 当前线程当中
         BaseContext.setCurrentId(Long.parseLong(userId.toString()));
-        log.info("用户已登录，userId: {}，请求: {}", userId, uri);
+        log.info("用户已登录，用户ID: {}，请求: {}", userId, uri);
         return true;
     }
 

@@ -169,7 +169,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         HttpSession httpSession = httpServletRequest.getSession();
         //设置用户id到redis当中,过期时间1天
         redisTemplate.opsForValue().set(RedisKey.USER_SESSION_ID + httpSession.getId(), user.getId(), 1, TimeUnit.DAYS);
-        log.info("设置session成功");
+        log.info("设置会话成功");
         //封装vo层数据
         UserVO userVO = new UserVO();
         BeanUtils.copyProperties(user, userVO);

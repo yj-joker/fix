@@ -99,7 +99,7 @@ public class MaintenanceManualServiceImpl extends ServiceImpl<MaintenanceManualM
         maintenanceManual.setUpdatedAt(now);
         save(maintenanceManual);
         evictManualCache(maintenanceManual.getId());
-        log.info("Add maintenance manual success: {}", maintenanceManual.getId());
+        log.info("新增手册成功: {}", maintenanceManual.getId());
         return maintenanceManual;
     }
 
@@ -118,7 +118,7 @@ public class MaintenanceManualServiceImpl extends ServiceImpl<MaintenanceManualM
         }
         removeById(id);
         evictManualCache(id);
-        log.info("Delete maintenance manual success: {}", id);
+        log.info("删除手册成功: {}", id);
     }
 
     @Override
@@ -148,7 +148,7 @@ public class MaintenanceManualServiceImpl extends ServiceImpl<MaintenanceManualM
         maintenanceManual.setUpdatedAt(LocalDateTime.now());
         updateById(maintenanceManual);
         evictManualCache(maintenanceManual.getId());
-        log.info("Update maintenance manual success: {}", maintenanceManual.getId());
+        log.info("更新手册成功: {}", maintenanceManual.getId());
         return maintenanceManual;
     }
 
@@ -299,7 +299,7 @@ public class MaintenanceManualServiceImpl extends ServiceImpl<MaintenanceManualM
      * <p>当前实现只做告警并交给后续回源覆盖，避免在读取路径主动删除未知值造成额外误伤。</p>
      */
     private void evictManualCacheValue(Object cachedValue) {
-        log.warn("Ignore unsupported maintenance manual cache value: {}", cachedValue.getClass().getName());
+        log.warn("忽略不受支持的手册缓存值: {}", cachedValue.getClass().getName());
     }
 
     /** 生成正常详情缓存 TTL，基础时长加随机值用于错开集中失效时间。 */

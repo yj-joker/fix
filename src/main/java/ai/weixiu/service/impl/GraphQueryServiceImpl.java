@@ -109,9 +109,10 @@ public class GraphQueryServiceImpl implements GraphQueryService {
             return emptyResult(safePage, safeSize);
         }
 
-        // ===== 6. OR Cypher + matchScore 排序 =====
-        List<DiagnosisPathVO> records = queryPathsWithScoring(deviceIds, componentIds, faultIds, skip, safeSize);
-        Long total = queryPathsTotal(componentIds, faultIds);
+        // ===== 6. OR Cypher + matchScore 排序（单次查询同时返回 records 和 total）=====
+        QueryResult queryResult = queryPathsWithTotal(deviceIds, componentIds, faultIds, skip, safeSize);
+        List<DiagnosisPathVO> records = queryResult.records;
+        Long total = queryResult.total;
 
         // ===== 7. 补充向量分数和路径文本 =====
         for (DiagnosisPathVO vo : records) {
@@ -120,7 +121,7 @@ public class GraphQueryServiceImpl implements GraphQueryService {
             vo.setPathText(buildPathText(vo));
         }
 
-        log.info("诊断路径查询: keyword={} faultIds={} compIds={} imageCount={} found={}",
+        log.info("诊断路径查询: 关键词={} 故障ID数={} 部件ID数={} 图片数={} 结果数={}",
                 query.getKeyword(),
                 faultIds != null ? faultIds.size() : 0,
                 componentIds != null ? componentIds.size() : 0,
@@ -130,16 +131,22 @@ public class GraphQueryServiceImpl implements GraphQueryService {
         return pageResult(records, total, safePage, safeSize);
     }
 
-    // ===== 核心 Cypher：OR 匹配 + matchScore 评分 =====
+    // ===== 核心 Cypher：OR 匹配 + matchScore 评分（单次查询返回 records + total）=====
+
+    /** 查询结果包装，同时持有分页数据和总数 */
+    private record QueryResult(List<DiagnosisPathVO> records, long total) {}
 
     /**
-     * OR 条件召回 + 多维度评分排序。
+     * OR 条件召回 + 多维度评分排序，单次查询同时返回 records 和 total。
+     * <p>
+     * 流程：先 MATCH 全量去重路径 → 计算 matchScore → collect 后取 size 作为 total
+     * → 切片当前页 → 仅对当前页 OPTIONAL MATCH Solution → 返回
      * <p>
      * - faultIds 和 componentIds 用 OR 连接（任一匹配即召回）
      * - deviceIds 作为额外加分项（不强制过滤）
      * - matchScore = fault匹配(+1) + comp匹配(+1) + device匹配(+1) + 历史故障(+1)
      */
-    private List<DiagnosisPathVO> queryPathsWithScoring(
+    private QueryResult queryPathsWithTotal(
             List<String> deviceIds,
             List<String> componentIds,
             List<String> faultIds,
@@ -148,7 +155,7 @@ public class GraphQueryServiceImpl implements GraphQueryService {
     ) {
         Map<String, Object> params = new HashMap<>();
         params.put("skip", skip);
-        params.put("limit", limit);
+        params.put("limit", skip + limit);
 
         // 构建 OR 条件
         List<String> orConditions = new ArrayList<>();
@@ -168,25 +175,30 @@ public class GraphQueryServiceImpl implements GraphQueryService {
         params.putIfAbsent("faultIds", List.of());
         params.put("deviceIds", deviceIds != null ? deviceIds : List.of());
 
+        // 单次查询：先聚合全量路径得到 total，再切片当前页，最后只对当前页展开 Solution
         String cypher = """
                 MATCH (d:Device)-[:OWNS]->(c:Component)-[:CAUSES]->(f:Fault)
                 WHERE %s
-                OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
                 OPTIONAL MATCH (d)-[hf:HAS_FAULT]->(f)
-                WITH d, c, f, hf IS NOT NULL AS hasHistory,
+                WITH DISTINCT d, c, f, hf IS NOT NULL AS hasHistory,
                      CASE WHEN f.id IN $faultIds THEN 1 ELSE 0 END +
                      CASE WHEN c.id IN $componentIds THEN 1 ELSE 0 END +
                      CASE WHEN d.id IN $deviceIds THEN 1 ELSE 0 END +
-                     CASE WHEN hf IS NOT NULL THEN 1 ELSE 0 END AS matchScore,
+                     CASE WHEN hf IS NOT NULL THEN 1 ELSE 0 END AS matchScore
+                ORDER BY matchScore DESC, hasHistory DESC
+                WITH collect({d: d, c: c, f: f, hasHistory: hasHistory, matchScore: matchScore}) AS allPaths
+                WITH allPaths, size(allPaths) AS total
+                UNWIND allPaths[$skip..$limit] AS path
+                WITH path.d AS d, path.c AS c, path.f AS f,
+                     path.hasHistory AS hasHistory, path.matchScore AS matchScore, total
+                OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)
+                WITH d, c, f, hasHistory, matchScore, total,
                      collect(DISTINCT {
                          id: s.id,
                          title: s.title,
                          estimatedTime: s.estimated_time,
                          verified: s.verified
                      }) AS solutions
-                ORDER BY matchScore DESC, hasHistory DESC
-                SKIP $skip
-                LIMIT $limit
                 RETURN d.id AS deviceId,
                        d.name AS deviceName,
                        c.id AS componentId,
@@ -196,44 +208,24 @@ public class GraphQueryServiceImpl implements GraphQueryService {
                        f.severity AS faultSeverity,
                        hasHistory,
                        matchScore,
-                       solutions
+                       solutions,
+                       total
                 """.formatted(whereClause);
 
-        return neo4jClient.query(cypher)
+        List<DiagnosisPathVO> records = new ArrayList<>();
+        long[] totalHolder = {0L};
+
+        neo4jClient.query(cypher)
                 .bindAll(params)
                 .fetchAs(DiagnosisPathVO.class)
-                .mappedBy((ctx, record) -> mapAggregatedPath(record))
+                .mappedBy((ctx, record) -> {
+                    totalHolder[0] = record.get("total").asLong(0);
+                    return mapAggregatedPath(record);
+                })
                 .all()
-                .stream()
-                .toList();
-    }
+                .forEach(records::add);
 
-    private Long queryPathsTotal(List<String> componentIds, List<String> faultIds) {
-        Map<String, Object> params = new HashMap<>();
-
-        List<String> orConditions = new ArrayList<>();
-        if (componentIds != null && !componentIds.isEmpty()) {
-            orConditions.add("c.id IN $componentIds");
-            params.put("componentIds", componentIds);
-        }
-        if (faultIds != null && !faultIds.isEmpty()) {
-            orConditions.add("f.id IN $faultIds");
-            params.put("faultIds", faultIds);
-        }
-
-        String whereClause = String.join(" OR ", orConditions);
-
-        String cypher = """
-                MATCH (d:Device)-[:OWNS]->(c:Component)-[:CAUSES]->(f:Fault)
-                WHERE %s
-                RETURN count(DISTINCT [d.id, c.id, f.id]) AS total
-                """.formatted(whereClause);
-
-        return neo4jClient.query(cypher)
-                .bindAll(params)
-                .fetchAs(Long.class)
-                .first()
-                .orElse(0L);
+        return new QueryResult(records, totalHolder[0]);
     }
 
     // ===== 映射方法 =====
@@ -322,6 +314,24 @@ public class GraphQueryServiceImpl implements GraphQueryService {
         result.setPage(page);
         result.setSize(size);
         return result;
+    }
+
+    @Override
+    public boolean faultExists(String name) {
+        if (!hasText(name)) return false;
+        String cypher = "MATCH (f:Fault) WHERE f.name CONTAINS $name RETURN f.name LIMIT 1";
+        return neo4jClient.query(cypher)
+                .bind(name).to("name")
+                .fetch().first().isPresent();
+    }
+
+    @Override
+    public boolean solutionExists(String title) {
+        if (!hasText(title)) return false;
+        String cypher = "MATCH (s:Solution) WHERE s.title CONTAINS $title RETURN s.title LIMIT 1";
+        return neo4jClient.query(cypher)
+                .bind(title).to("title")
+                .fetch().first().isPresent();
     }
 
     private boolean hasText(String value) {

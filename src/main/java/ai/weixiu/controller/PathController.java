@@ -23,4 +23,16 @@ public class PathController {
     public Result<PageResult<DiagnosisPathVO>> searchDiagnosisPaths(@RequestBody DiagnosisSearchQuery query) {
         return Result.success(graphQueryService.searchDiagnosisPaths(query));
     }
+
+    @GetMapping("/fault-exists")
+    @Operation(summary = "验证故障名称是否存在于知识图谱中（模糊匹配）")
+    public Result<Boolean> faultExists(@RequestParam String name) {
+        return Result.success(graphQueryService.faultExists(name));
+    }
+
+    @GetMapping("/solution-exists")
+    @Operation(summary = "验证解决方案标题是否存在于知识图谱中（模糊匹配）")
+    public Result<Boolean> solutionExists(@RequestParam String title) {
+        return Result.success(graphQueryService.solutionExists(title));
+    }
 }

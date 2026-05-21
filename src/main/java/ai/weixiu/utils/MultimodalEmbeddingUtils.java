@@ -150,7 +150,7 @@ public class MultimodalEmbeddingUtils {
                     log.debug("图片转 base64 成功: {} ({}KB)", objectName, bytes.length / 1024);
                 }
             } catch (Exception e) {
-                log.warn("图片下载转 base64 失败，跳过: {} error={}", url, e.getMessage());
+                log.warn("图片下载转 base64 失败，跳过: {} 错误={}", url, e.getMessage());
             }
         }
         return base64List;

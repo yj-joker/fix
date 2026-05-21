@@ -52,4 +52,9 @@ public interface DeviceService {
     * 分页查询设备总数和信息
     * */
     PageResult<DeviceVO> getDeviceList(DiagnosisPathQuery diagnosisPathQuery);
+
+    /**
+     * 按关键字搜索设备（名称/编码/型号/位置模糊匹配），供 Python Agent 调用
+     */
+    List<DeviceVO> searchDevices(String keyword, int limit);
 }

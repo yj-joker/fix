@@ -14,4 +14,14 @@ public interface GraphQueryService {
      * ID 层面合并去重后，通过 OR 匹配 + 多维度评分排序返回路径。
      */
     PageResult<DiagnosisPathVO> searchDiagnosisPaths(DiagnosisSearchQuery query);
+
+    /**
+     * 验证故障名称是否存在于知识图谱中（模糊匹配）
+     */
+    boolean faultExists(String name);
+
+    /**
+     * 验证解决方案标题是否存在于知识图谱中（模糊匹配）
+     */
+    boolean solutionExists(String title);
 }

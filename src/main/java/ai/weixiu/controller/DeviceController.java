@@ -8,12 +8,15 @@ import ai.weixiu.pojo.dto.DeviceDTO;
 import ai.weixiu.pojo.query.DeviceQuery;
 import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.DeviceOverviewVO;
+import ai.weixiu.pojo.vo.DeviceVO;
 import ai.weixiu.service.DeviceService;
 import ai.weixiu.utils.CreateEntityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/weixiu/device")
@@ -52,6 +55,15 @@ public class DeviceController {
     public Result<PageResult<ComponentVO>> getComponents(@RequestBody DeviceQuery deviceQuery) {
         return Result.success(deviceService.getComponents(deviceQuery));
      }
+
+    @GetMapping("/search")
+    @Operation(summary = "按关键字搜索设备（名称/编码/型号/位置模糊匹配）")
+    public Result<List<DeviceVO>> searchDevices(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "10") int limit) {
+        List<DeviceVO> devices = deviceService.searchDevices(keyword, Math.min(limit, 50));
+        return Result.success(devices);
+    }
 
     @PostMapping("/generate-test-data")
     @Operation(summary = "生成200个测试知识图谱实体（含向量和关系）")

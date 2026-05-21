@@ -129,6 +129,11 @@ public class DeviceServiceImpl implements DeviceService {
         return result;
     }
 
+    @Override
+    public List<DeviceVO> searchDevices(String keyword, int limit) {
+        return deviceRepository.getDevices(keyword, 0, limit);
+    }
+
     protected Device toEntity(DeviceDTO deviceDTO) {
         Device device = new Device();
         BeanUtils.copyProperties(deviceDTO, device);

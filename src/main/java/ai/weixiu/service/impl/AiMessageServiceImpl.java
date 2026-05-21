@@ -48,7 +48,7 @@ public class AiMessageServiceImpl extends ServiceImpl<AiMessageMapper, AiMessage
         List<AiMessage> list = this.list(queryWrapper);
         // 倒序取出后需要反转回时间正序，这样AI看到的消息是按时间顺序排列的
         java.util.Collections.reverse(list);
-        log.info("findMemory: 取最近{}轮，共{}条消息", maxMemory, list.size());
+        log.info("查询记忆: 取最近{}轮，共{}条消息", maxMemory, list.size());
         return list;
     }
 

@@ -58,14 +58,14 @@ public class AsyncUtils {
         String lockKey = RedisKey.CONSOLIDATION_LOCK + sessionId;
         Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", 5, TimeUnit.MINUTES);
         if (acquired == null || !acquired) {
-            log.warn("记忆整合已在进行中, sessionId:{}", sessionId);
+            log.warn("记忆整合已在进行中, 会话ID:{}", sessionId);
             return;
         }
 
         try {
             List<AiMessage> needIntegrationMemory = aiMessageService.getNeedIntegrationMemory(roundCount, sessionId, userId, maxMemory);
             if (needIntegrationMemory.isEmpty()) {
-                log.info("没有需要整合的消息, sessionId:{}", sessionId);
+                log.info("没有需要整合的消息, 会话ID:{}", sessionId);
                 return;
             }
 
@@ -79,7 +79,7 @@ public class AsyncUtils {
                 }
             }
             if (totalUserContentLength < 30) {
-                log.info("用户消息总长度过短({}字符), 跳过本次整合, sessionId:{}", totalUserContentLength, sessionId);
+                log.info("用户消息总长度过短({}字符), 跳过本次整合, 会话ID:{}", totalUserContentLength, sessionId);
                 return;
             }
 
@@ -95,7 +95,7 @@ public class AsyncUtils {
             String summary = null;
             for (int attempt = 0; attempt <= MAX_CONSOLIDATION_RETRIES; attempt++) {
                 if (attempt > 0) {
-                    log.info("记忆整合重试第{}次, sessionId:{}", attempt, sessionId);
+                    log.info("记忆整合重试第{}次, 会话ID:{}", attempt, sessionId);
                     try {
                         Thread.sleep(RETRY_DELAY_MS);
                     } catch (InterruptedException e) {
@@ -114,7 +114,7 @@ public class AsyncUtils {
                             .bodyToMono(String.class)
                             .block();
                 } catch (Exception e) {
-                    log.warn("记忆整合HTTP调用失败, attempt:{}, sessionId:{}, error:{}", attempt, sessionId, e.getMessage());
+                    log.warn("记忆整合HTTP调用失败, 第{}次尝试, 会话ID:{}, 错误:{}", attempt, sessionId, e.getMessage());
                     continue;
                 }
 
@@ -129,24 +129,24 @@ public class AsyncUtils {
                         // 检查是否返回了错误状态
                         String status = responseJson.getStr("status");
                         if ("error".equals(status)) {
-                            log.warn("记忆整合返回错误, attempt:{}, sessionId:{}, response:{}", attempt, sessionId, response);
+                            log.warn("记忆整合返回错误, 第{}次尝试, 会话ID:{}, 响应:{}", attempt, sessionId, response);
                             continue;
                         }
                         summary = response;
                         break;
                     } catch (Exception e) {
-                        log.warn("记忆整合返回解析失败, attempt:{}, sessionId:{}, response:{}", attempt, sessionId, response);
+                        log.warn("记忆整合返回解析失败, 第{}次尝试, 会话ID:{}, 响应:{}", attempt, sessionId, response);
                     }
                 }
             }
 
             if (summary == null) {
-                log.error("记忆整合最终失败(重试{}次后), sessionId:{}", MAX_CONSOLIDATION_RETRIES, sessionId);
+                log.error("记忆整合最终失败(重试{}次后), 会话ID:{}", MAX_CONSOLIDATION_RETRIES, sessionId);
                 return;
             }
 
             //保存模型生成的摘要
-            log.info("模型返回的摘要, sessionId:{}", summary);
+            log.info("模型返回的摘要, 会话ID:{}", summary);
             saveSummary(summary, sessionId, userId, needIntegrationMemory);
         } finally {
             redisTemplate.delete(lockKey);
@@ -158,7 +158,7 @@ public class AsyncUtils {
         JSONObject summaryJson = JSONUtil.parseObj(summary);
         JSONObject summaryData = summaryJson.getJSONObject("summary");
         if (summaryData == null) {
-            log.warn("摘要数据为空, sessionId:{}", sessionIdStr);
+            log.warn("摘要数据为空, 会话ID:{}", sessionIdStr);
             return;
         }
 
@@ -187,7 +187,7 @@ public class AsyncUtils {
                 facts.add(memoryFact);
             }
             memoryFactService.saveBatch(facts);
-            log.info("保存newFacts成功, 数量:{}", facts.size());
+            log.info("保存新事实成功, 数量:{}", facts.size());
         }
 
         // 2. 更新supersededIds对应的memory_fact状态
@@ -202,7 +202,7 @@ public class AsyncUtils {
                     .set(MemoryFact::getStatus, "superseded")
                     .set(MemoryFact::getSupersededAt, LocalDateTime.now());
             memoryFactService.update(factWrapper);
-            log.info("更新supersededIds成功, 数量:{}", supersededFactIds.size());
+            log.info("更新已替代事实成功, 数量:{}", supersededFactIds.size());
         }
 
         // 3. 保存updatedPreferences到memory_preference
@@ -255,11 +255,11 @@ public class AsyncUtils {
             if (!preferences.isEmpty()) {
                 memoryPreferenceService.saveBatch(preferences);
             }
-            log.info("保存updatedPreferences成功, 数量:{}", updatedPreferences.size());
+            log.info("保存更新偏好成功, 数量:{}", updatedPreferences.size());
             // 保存成功后删除缓存
             String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionIdStr;
             redisTemplate.delete(prefCacheKey);
-            log.info("删除偏好缓存, key:{}", prefCacheKey);
+            log.info("删除偏好缓存, 键:{}", prefCacheKey);
         }
 
         // 4. 保存updatedUnresolved到memory_unresolved
@@ -277,7 +277,7 @@ public class AsyncUtils {
                 unresolvedList.add(memoryUnresolved);
             }
             memoryUnresolvedService.saveBatch(unresolvedList);
-            log.info("保存updatedUnresolved成功, 数量:{}", unresolvedList.size());
+            log.info("保存更新待办成功, 数量:{}", unresolvedList.size());
         }
 
         // 5. 更新resolvedItems对应的memory_unresolved状态（通过ID）
@@ -291,7 +291,7 @@ public class AsyncUtils {
             unresolvedWrapper.in(MemoryUnresolved::getId, resolvedIds)
                     .set(MemoryUnresolved::getStatus, "resolved");
             memoryUnresolvedService.update(unresolvedWrapper);
-            log.info("更新resolvedItems成功, 数量:{}", resolvedIds.size());
+            log.info("更新已解决事项成功, 数量:{}", resolvedIds.size());
         }
 
         // 6. 更新ai_session的briefSummary
@@ -301,7 +301,7 @@ public class AsyncUtils {
             sessionWrapper.eq(AiSession::getId, sessionId)
                     .set(AiSession::getSummary, briefSummary);
             aiSessionService.update(sessionWrapper);
-            log.info("更新ai_session.summary成功, sessionId:{}", sessionIdStr);
+            log.info("更新ai_session.summary成功, 会话ID:{}", sessionIdStr);
         }
 
         // 7. 标记已整合的消息
@@ -444,17 +444,17 @@ public class AsyncUtils {
                     .block();
 
             if (response == null) {
-                log.warn("[realtime] 实时更新返回为空, sessionId:{}", sessionId);
+                log.warn("[realtime] 实时更新返回为空, 会话ID:{}", sessionId);
                 return;
             }
 
-            log.info("[realtime] Python返回原始响应: {}", response);
+            log.info("[实时记忆] 返回原始响应: {}", response);
             JSONObject result = JSONUtil.parseObj(response);
             if (!result.getBool("has_update", false)) {
-                log.debug("[realtime] 无需实时更新, sessionId:{}", sessionId);
+                log.debug("[realtime] 无需实时更新, 会话ID:{}", sessionId);
                 return;
             }
-            log.info("[realtime] 检测到实时更新, sessionId:{}", sessionId);
+            log.info("[realtime] 检测到实时更新, 会话ID:{}", sessionId);
 
             String sessionIdStr = sessionId.toString();
 
@@ -471,7 +471,7 @@ public class AsyncUtils {
                         .set(MemoryFact::getStatus, "superseded")
                         .set(MemoryFact::getSupersededAt, LocalDateTime.now());
                 memoryFactService.update(factWrapper);
-                log.info("[realtime] 标记旧事实为superseded, 数量:{}", factIds.size());
+                log.info("[实时记忆] 标记旧事实为已替代, 数量:{}", factIds.size());
             }
 
             // 保存新的正确事实（使用Python返回的向量库doc_id作为factId）
@@ -493,7 +493,7 @@ public class AsyncUtils {
                     newFacts.add(memoryFact);
                 }
                 memoryFactService.saveBatch(newFacts);
-                log.info("[realtime] 保存纠正事实成功, 数量:{}", newFacts.size());
+                log.info("[实时记忆] 保存纠正事实成功, 数量:{}", newFacts.size());
             }
 
             // 处理偏好变更
@@ -521,7 +521,7 @@ public class AsyncUtils {
                                     .map(MemoryPreference::getId)
                                     .collect(Collectors.toList());
                             memoryPreferenceService.removeByIds(deleteIds);
-                            log.info("[realtime] 删除偏好成功, 数量:{}, content:{}", deleteIds.size(), content);
+                            log.info("[实时记忆] 删除偏好成功, 数量:{}, 内容:{}", deleteIds.size(), content);
                             cacheInvalidated = true;
                         }
                     } else {
@@ -537,7 +537,7 @@ public class AsyncUtils {
                         if (existing != null) {
                             existing.setContent(content);
                             memoryPreferenceService.updateById(existing);
-                            log.info("[realtime] 更新偏好成功, id:{}, content:{}", existing.getId(), content);
+                            log.info("[实时记忆] 更新偏好成功, 编号:{}, 内容:{}", existing.getId(), content);
                         } else {
                             MemoryPreference newPref = new MemoryPreference();
                             newPref.setSessionId(sessionIdStr);
@@ -547,7 +547,7 @@ public class AsyncUtils {
                             newPref.setPreferenceCategory(preferenceCategory);
                             newPref.setConsolidationSeq(0);
                             memoryPreferenceService.save(newPref);
-                            log.info("[realtime] 新增偏好成功, content:{}", content);
+                            log.info("[实时记忆] 新增偏好成功, 内容:{}", content);
                         }
                         cacheInvalidated = true;
                     }
@@ -556,13 +556,13 @@ public class AsyncUtils {
                 if (cacheInvalidated) {
                     String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionIdStr;
                     redisTemplate.delete(prefCacheKey);
-                    log.info("[realtime] 删除偏好缓存, key:{}", prefCacheKey);
+                    log.info("[实时记忆] 删除偏好缓存, 键:{}", prefCacheKey);
                 }
             }
 
-            log.info("[realtime] 实时记忆更新完成, sessionId:{}", sessionId);
+            log.info("[realtime] 实时记忆更新完成, 会话ID:{}", sessionId);
         } catch (Exception e) {
-            log.error("[realtime] 实时记忆更新失败, sessionId:{}, error:{}", sessionId, e.getMessage(), e);
+            log.error("[实时记忆] 实时记忆更新失败, 会话ID:{}, 错误:{}", sessionId, e.getMessage(), e);
         }
     }
 }
