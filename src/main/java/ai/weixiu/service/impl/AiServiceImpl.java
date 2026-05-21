@@ -39,7 +39,6 @@ import reactor.core.publisher.Flux;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.io.File;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -67,9 +66,6 @@ public class AiServiceImpl implements AiService {
     @Transactional
     public Flux<String> chat(AiChatRequest aiChatRequest) {
         String uri = "/ai/chat/stream";
-        if (aiChatRequest.getUrl() != null) {
-            //含有图片
-        }
         Long userId = BaseContext.getCurrentId();
         LocalDateTime now = LocalDateTime.now();
         //查找当前会话记忆
@@ -435,7 +431,4 @@ public class AiServiceImpl implements AiService {
         return aiSession;
     }
 
-    private boolean havePicture(File file) {
-        return false;
-    }
 }

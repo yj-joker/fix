@@ -31,5 +31,10 @@ public class AiChatRequest {
     @JsonProperty("context")
     private Map<String, Object> context;
 
-    private String url;
+    /**
+     * 用户上传的图片 URL 列表（MinIO 地址）
+     * Python 端 FixAgent 会将图片传给图谱查询工具做多模态检索
+     */
+    @JsonProperty("images")
+    private List<String> images;
 }
