@@ -20,11 +20,23 @@ import java.util.concurrent.TimeUnit;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+/**
+ * MinIO 文件存储实现。
+ *
+ * <p>公共桶文件可以返回固定访问地址；私有桶文件只能返回带过期时间的预签名地址。
+ * 维修手册文档走私有桶，因此业务层需要保存对象名，并在用户真正访问详情时再生成临时 URL。</p>
+ */
 public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
+    /** MinIO 官方客户端，负责对象和 Bucket 操作。 */
     private final MinioClient minioClient;
+
+    /** MinIO 服务端点等项目配置，用于拼装公共桶访问地址。 */
     private final MinioProperties minioProperties;
+
     /**
-     * 项目启动时自动检查并创建 Bucket
+     * 项目启动时检查所有业务桶。
+     *
+     * <p>若枚举声明的桶还不存在，则在启动阶段创建，避免第一次上传时才暴露桶缺失问题。</p>
      */
     @PostConstruct
     public void init() {
@@ -34,9 +46,13 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
     }
 
 
-    /*
-    * 返回图片的url
-    * */
+    /**
+     * 上传文件并返回可访问结果。
+     *
+     * <p>这是通用上传入口：公共桶返回永久 URL，私有桶返回预签名 URL。
+     * 若业务需要把文件和数据库记录长期绑定，应优先使用 {@link #getObjectName(MultipartFile, String)}
+     * 保存对象名，而不是把私有桶预签名地址直接存库。</p>
+     */
     @Override
     public String upload(MultipartFile file, BucketEnum bucket) {
         // 生成唯一文件名，避免覆盖
@@ -47,6 +63,7 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
     }
 
     @Override
+    /** 按对象名下载指定桶中的文件流，调用方负责后续流消费。 */
     public InputStream download(String objectName, BucketEnum bucket) {
         try {
             return minioClient.getObject(
@@ -62,6 +79,7 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
     }
 
     @Override
+    /** 删除指定桶中的对象。 */
     public void delete(String objectName, BucketEnum bucket) {
         try {
             minioClient.removeObject(
@@ -76,7 +94,14 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
             throw new RuntimeException("文件删除失败", e);
         }
     }
+
     @Override
+    /**
+     * 上传文件并返回 MinIO 对象名。
+     *
+     * <p>对象名使用 UUID 和原始后缀构造，避免同名文件覆盖。
+     * 维修手册把这个值写入 minioObjectName 字段，后续详情访问、文件替换和删除都依赖它。</p>
+     */
     public @NonNull String getObjectName(MultipartFile file, String name) {
         try {
             // 生成唯一文件名，避免覆盖
@@ -102,11 +127,14 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
             throw new UploadException("文件上传失败");
         }
     }
+
+    /** 上传到私有桶后返回临时访问地址。 */
     private String uploadPrivateFile(MultipartFile file, String name) {
         String objectName = getObjectName(file, name);
         return getPresignedUrl(objectName, BucketEnum.PRIVATE,120);
     }
 
+    /** 上传到公共桶后返回固定访问地址。 */
     private String uploadPublicFile(MultipartFile file, String name) {
         String objectName = getObjectName(file, name);
         return getFileUrl(objectName, name);
@@ -114,16 +142,20 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
 
 
     /**
-     * 获取文件的永久访问地址（需要 Bucket 设置为 public）
+     * 获取公共桶文件的永久访问地址。
+     *
+     * <p>该地址依赖 Bucket 可公开访问，不适用于维修手册私有桶文件。</p>
      */
     public String getFileUrl(String objectName, String bucketName) {
         return minioProperties.getEndpoint() + "/"
                 + bucketName + "/" + objectName;
     }
     /**
-     * 获取文件的预签名访问 URL（临时可访问链接）
-     * @param objectName 对象名
-     * @param expiry     过期时间（分钟）
+     * 获取文件的预签名访问 URL。
+     *
+     * @param objectName MinIO 对象名
+     * @param bucket     对象所在桶
+     * @param expiry     过期时间，单位为分钟
      */
     @Override
     public String getPresignedUrl(String objectName, BucketEnum bucket, int expiry) {
@@ -132,6 +164,7 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
         return getPresignedUrl(objectName, bucket.getName(), expiry);
     }
 
+    /** 调用 MinIO 客户端生成 GET 预签名地址。 */
     private String getPresignedUrl(String objectName,String bucketName,int expiry) {
         try {
             return minioClient.getPresignedObjectUrl(
@@ -147,10 +180,11 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
             throw new RuntimeException("获取预签名 URL 失败", e);
         }
     }
-    /*
-    * 上传图片
-    * */
-
+    /**
+     * 确保指定 Bucket 已存在。
+     *
+     * <p>当前方法在启动阶段调用，发现桶不存在时立即创建；创建失败则阻止服务继续以半可用状态运行。</p>
+     */
     private void ensureBucketExists(String bucketName) {
         try {
             boolean exists = minioClient.bucketExists(

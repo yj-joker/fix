@@ -25,9 +25,7 @@ public class MaintenanceManual implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * 主键ID
-     */
+    /** 主键 id，由 MyBatis Plus 雪花算法生成。 */
     @TableId(value = "id", type = IdType.ASSIGN_ID)
     private Long id;
 
@@ -62,7 +60,10 @@ public class MaintenanceManual implements Serializable {
     private Long fileSize;
 
     /**
-     * MinIO对象名
+     * MinIO 私有桶对象名。
+     *
+     * <p>这是服务端稳定保存的文件定位信息，不是前端直接访问地址；
+     * 详情接口会基于它生成有过期时间的预签名 URL。</p>
      */
     private String minioObjectName;
 

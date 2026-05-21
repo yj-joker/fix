@@ -37,18 +37,41 @@ import java.util.concurrent.TimeUnit;
  * 这样用户一天内多次短时查看同一本手册，也能逐步累计到 60 秒有效阅读阈值。</p>
  */
 public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadService {
+    /** 阅读统计使用的业务时区，保证按天累计和前端理解的日期边界一致。 */
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+
+    /** 返回给前端的建议心跳间隔，单位为秒。 */
     private static final int HEARTBEAT_INTERVAL_SECONDS = 20;
+
+    /** 单次心跳最多认可的阅读秒数，用于限制断网或伪造上报造成的异常补时。 */
     private static final int MAX_HEARTBEAT_SECONDS = 30;
+
+    /** 当天累计阅读达到该秒数后，才允许为手册排行榜增加一次分值。 */
     private static final int VALID_READ_THRESHOLD_SECONDS = 60;
+
+    /** 阅读会话过期时间；前端持续心跳时会被刷新。 */
     private static final Duration READ_SESSION_TTL = Duration.ofMinutes(5);
 
+    /** 阅读会话、累计时长和计榜标记都使用字符串 Redis 操作。 */
     private final StringRedisTemplate stringRedisTemplate;
+
+    /** 串行化同一阅读会话的并发心跳。 */
     private final RedissonClient redissonClient;
+
+    /** 开始阅读前用它确认手册真实存在。 */
     private final MaintenanceManualService maintenanceManualService;
+
+    /** 阅读达到阈值且抢到当天计榜标记后，调用它更新各周期榜单。 */
     private final MaintenanceManualRankService maintenanceManualRankService;
 
     @Override
+    /**
+     * 创建一次阅读会话。
+     *
+     * <p>会话本身只绑定当前登录用户和本次打开的手册，真正的当天累计阅读时长并不放在会话里，
+     * 而是放在“用户 + 手册 + 日期”维度的独立 key 中。这样用户同一天反复打开手册，
+     * 每次会话都能把有效心跳继续累计到同一份当天阅读时长上。</p>
+     */
     public MaintenanceManualReadStartVO start(Long manualId) {
         if (manualId == null) {
             throw new NullException("Maintenance manual id cannot be empty");
@@ -72,6 +95,13 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
     }
 
     @Override
+    /**
+     * 处理一次阅读心跳。
+     *
+     * <p>心跳接口不信任前端自行提交的阅读秒数，只接受会话 id，
+     * 再用服务端记录的最近心跳时间计算本次可累计时长。
+     * 同一会话加锁后再更新最近心跳时间，避免并发请求把同一段时长重复计入。</p>
+     */
     public MaintenanceManualReadHeartbeatVO heartbeat(String readSessionId) {
         if (!StringUtils.hasText(readSessionId)) {
             throw new NullException("Read session id cannot be empty");
@@ -98,6 +128,13 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
         }
     }
 
+    /**
+     * 在会话锁持有期间完成心跳主流程。
+     *
+     * <p>流程包括读取并校验会话、计算本次有效秒数、更新当天累计时长、
+     * 刷新会话 TTL，以及在达到 60 秒阈值后尝试抢占当天计榜标记。
+     * 抢占成功才会真正更新排行榜，所以同一用户当天多次打开同一手册也只加一分。</p>
+     */
     private MaintenanceManualReadHeartbeatVO heartbeatLocked(String readSessionId, Long userId) {
         String sessionKey = RedisKey.MANUAL_READ_SESSION + readSessionId;
         Map<Object, Object> session = stringRedisTemplate.opsForHash().entries(sessionKey);
@@ -149,6 +186,7 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
         return new MaintenanceManualReadHeartbeatVO(currentDuration == null ? 0L : currentDuration, counted, rankIncreased);
     }
 
+    /** 从线程上下文取得当前登录用户 id，阅读统计必须绑定真实用户。 */
     private Long currentUserId() {
         Long userId = BaseContext.getCurrentId();
         if (userId == null) {
@@ -157,11 +195,13 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
         return userId;
     }
 
+    /** 读取当天累计阅读秒数；key 不存在时从 0 秒开始累计。 */
     private Long readDuration(String durationKey) {
         String duration = stringRedisTemplate.opsForValue().get(durationKey);
         return duration == null ? 0L : Long.parseLong(duration);
     }
 
+    /** 容错解析 Redis Hash 中的数字字段，格式不合法时返回 null 交给上层判定会话无效。 */
     private Long parseLong(Object value) {
         if (value == null) {
             return null;
@@ -173,18 +213,27 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
         }
     }
 
+    /** 拼装当天累计阅读时长 key。 */
     private String getDurationKey(Long userId, Long manualId) {
         return RedisKey.MANUAL_READ_DURATION + userId + ":" + manualId + ":" + currentDay();
     }
 
+    /** 拼装当天已计榜标记 key。 */
     private String getCountedKey(Long userId, Long manualId) {
         return RedisKey.MANUAL_READ_COUNTED + userId + ":" + manualId + ":" + currentDay();
     }
 
+    /** 获取业务时区下的当前日期文本，作为按天统计 key 的组成部分。 */
     private String currentDay() {
         return LocalDate.now(BUSINESS_ZONE).format(DateTimeFormatter.BASIC_ISO_DATE);
     }
 
+    /**
+     * 计算当天阅读统计相关 key 的剩余寿命。
+     *
+     * <p>TTL 到次日零点后一小时，而不是固定 24 小时，
+     * 这样可以让日期维度自然切换，也给跨零点附近的心跳留出处理缓冲。</p>
+     */
     private Duration currentDayTtl() {
         // 当天累计时长和计榜标记延续到上海时区次日零点后一小时，
         // 给跨日边界附近的心跳处理留出缓冲。
