@@ -14,4 +14,6 @@ public interface MioIOUpLoadService {
 
     String getObjectName(MultipartFile file, String name);
 
+    String getPresignedUrl(String objectName, BucketEnum bucket, int expiry);
+
 }

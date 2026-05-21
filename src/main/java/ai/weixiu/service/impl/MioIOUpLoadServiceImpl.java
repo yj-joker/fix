@@ -104,7 +104,7 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
     }
     private String uploadPrivateFile(MultipartFile file, String name) {
         String objectName = getObjectName(file, name);
-        return getPresignedUrl(objectName,name,120);
+        return getPresignedUrl(objectName, BucketEnum.PRIVATE,120);
     }
 
     private String uploadPublicFile(MultipartFile file, String name) {
@@ -125,7 +125,14 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
      * @param objectName 对象名
      * @param expiry     过期时间（分钟）
      */
-    public String getPresignedUrl(String objectName,String bucketName,int expiry) {
+    @Override
+    public String getPresignedUrl(String objectName, BucketEnum bucket, int expiry) {
+        // 私有桶对象不能暴露永久公开地址。
+        // 调用方传入稳定的对象名，这里返回可供浏览器临时访问的 GET 预签名 URL。
+        return getPresignedUrl(objectName, bucket.getName(), expiry);
+    }
+
+    private String getPresignedUrl(String objectName,String bucketName,int expiry) {
         try {
             return minioClient.getPresignedObjectUrl(
                     GetPresignedObjectUrlArgs.builder()

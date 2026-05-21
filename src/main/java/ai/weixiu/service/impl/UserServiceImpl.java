@@ -245,8 +245,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (!email.matches("^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)+$")) {
             throw new EmailException("邮箱格式不正确");
         }
-        //判断用户是否反复发送
-        if (redisTemplate.hasKey(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId())) {
+        //校验 mode 是否合法
+        if (!Objects.equals(mode, EmailEnum.ACTIVATION_EMAIL.getCode())
+                && !Objects.equals(mode, EmailEnum.RESET_PASSWORD_EMAIL.getCode())) {
+            throw new EmailException("无效的操作类型");
+        }
+        //重置密码模式下，校验邮箱是否属于当前用户（防止给任意邮箱发验证码）
+        if (Objects.equals(mode, EmailEnum.RESET_PASSWORD_EMAIL.getCode())) {
+            User user = this.getById(BaseContext.getCurrentId());
+            if (user == null || user.getEmail() == null || !user.getEmail().equals(email)) {
+                throw new EmailException("该邮箱与当前账号不匹配");
+            }
+        }
+        //判断用户是否反复发送（Boolean.TRUE.equals 防止 hasKey 返回 null 导致 NPE）
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(RedisKey.USER_EMAIL_CODE + BaseContext.getCurrentId()))) {
             throw new EmailException("请勿重复发送验证码");
         }
         SimpleMailMessage message = new SimpleMailMessage();
@@ -257,6 +269,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         //根据不同mode设置不同邮件标题
         if (Objects.equals(mode, EmailEnum.ACTIVATION_EMAIL.getCode())) {
             message.setSubject("维修平台绑定邮箱");
+        } else if (Objects.equals(mode, EmailEnum.RESET_PASSWORD_EMAIL.getCode())) {
+            message.setSubject("维修平台重置密码");
         }
         //设置邮件内容
         String code = getCode();
@@ -276,11 +290,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      if (redisCode == null) {
          throw new EmailException("请先发送验证码");
      }
-     //MessageDigest.isEqual(),防止验证码被猜测
-     if (MessageDigest.isEqual(code.getBytes(), redisCode.getBytes())) {
+     //MessageDigest.isEqual() 时间恒定比较，防止验证码被计时攻击猜测
+     if (!MessageDigest.isEqual(code.getBytes(), redisCode.getBytes())) {
          throw new EmailException("验证码错误,请重新输入");
      }
      User user = this.getById(BaseContext.getCurrentId());
+     if (user == null) {
+         throw new EmailException("用户不存在");
+     }
 
      if(Objects.equals(mode, EmailEnum.ACTIVATION_EMAIL.getCode())){
          //激活邮箱
@@ -298,15 +315,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
          log.info("密码重置成功");
      }
      else{
-         throw new EmailException("验证码错误,请重新输入");
+         throw new EmailException("无效的操作类型");
      }
     }
 
     private String getCode() {
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        java.security.SecureRandom random = new java.security.SecureRandom();
         StringBuilder code = new StringBuilder();
         for (int i = 0; i < 6; i++) {
-            code.append(chars.charAt((int) (Math.random() * chars.length())));
+            code.append(chars.charAt(random.nextInt(chars.length())));
         }
         return code.toString();
     }

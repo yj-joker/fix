@@ -21,6 +21,11 @@ CREATE TABLE `user` (
                         INDEX `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
+-- 给user表添加email字段
+ALTER TABLE user ADD COLUMN email VARCHAR(255) NULL COMMENT '邮箱';
+
+
+
 -- AI会话表建表语句
 CREATE TABLE ai_session (
                             id BIGINT PRIMARY KEY ,
