@@ -53,4 +53,7 @@ public class RedisKey {
 
         /** 总榜 ZSet key，长期累计有效阅读次数。 */
         public static final String MANUAL_RANK_TOTAL = "Maintenance:Manual:Rank:Total";
+
+        /** 个性化推荐缓存前缀，完整 key 追加 userId。TTL 2小时。 */
+        public static final String MANUAL_RECOMMEND = "Recommend:Manual:";
 }

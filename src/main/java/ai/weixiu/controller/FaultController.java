@@ -45,7 +45,7 @@ public class FaultController {
         return Result.success(faultService.update(faultDTO));
     }
 
-    @GetMapping("/solutions")
+    @PostMapping("/solutions")
     @Operation(summary = "分页查询故障的解决方案列表")
     public Result<PageResult<SolutionVO>> getSolutions(@RequestBody FaultQuery faultQuery) {
         return Result.success(faultService.getSolutions(faultQuery));

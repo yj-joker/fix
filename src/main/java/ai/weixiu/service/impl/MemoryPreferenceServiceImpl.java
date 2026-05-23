@@ -32,4 +32,12 @@ public class MemoryPreferenceServiceImpl extends ServiceImpl<MemoryPreferenceMap
                         .eq(MemoryPreference::getSessionId, sessionId));
         return this.list(wrapper);
     }
+
+    @Override
+    public List<MemoryPreference> getUserLevelPreferences(Long userId) {
+        LambdaQueryWrapper<MemoryPreference> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(MemoryPreference::getUserId, userId)
+                .eq(MemoryPreference::getPreferenceCategory, PreferenceCategoryEnum.USER_PREFERENCE.getCategory());
+        return this.list(wrapper);
+    }
 }

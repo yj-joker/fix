@@ -7,14 +7,17 @@ import ai.weixiu.pojo.dto.MaintenanceManualDTO;
 import ai.weixiu.pojo.dto.MaintenanceManualReadHeartbeatDTO;
 import ai.weixiu.pojo.dto.MaintenanceManualReadStartDTO;
 import ai.weixiu.pojo.query.MaintenanceManualQuery;
+import ai.weixiu.pojo.vo.ManualRecommendVO;
 import ai.weixiu.pojo.vo.MaintenanceManualRankVO;
 import ai.weixiu.pojo.vo.MaintenanceManualReadHeartbeatVO;
 import ai.weixiu.pojo.vo.MaintenanceManualReadStartVO;
 import ai.weixiu.pojo.vo.MaintenanceManualVO;
 import ai.weixiu.enumerate.MaintenanceManualRankType;
+import ai.weixiu.service.ManualRecommendService;
 import ai.weixiu.service.MaintenanceManualService;
 import ai.weixiu.service.MaintenanceManualRankService;
 import ai.weixiu.service.MaintenanceManualReadService;
+import ai.weixiu.utils.BaseContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
@@ -45,6 +48,9 @@ public class MaintenanceManualController {
 
     /** 日榜、周榜、月榜和总榜查询入口。 */
     private final MaintenanceManualRankService maintenanceManualRankService;
+
+    /** 个性化推荐服务。 */
+    private final ManualRecommendService manualRecommendService;
 
     @PostMapping("/save")
     @Operation(summary = "新增维修手册")
@@ -105,6 +111,14 @@ public class MaintenanceManualController {
     /** 接收前端周期心跳，累计服务端认可的阅读秒数。 */
     public Result<MaintenanceManualReadHeartbeatVO> heartbeat(@RequestBody MaintenanceManualReadHeartbeatDTO heartbeatDTO) {
         return Result.success(maintenanceManualReadService.heartbeat(heartbeatDTO.getReadSessionId()));
+    }
+
+    @GetMapping("/recommend")
+    @Operation(summary = "获取个性化推荐手册")
+    /** 根据当前用户画像（偏好 + 近期对话）返回个性化推荐的手册列表。 */
+    public Result<List<ManualRecommendVO>> recommend(@RequestParam(defaultValue = "6") Integer limit) {
+        Long userId = BaseContext.getCurrentId();
+        return Result.success(manualRecommendService.getRecommendations(userId, limit));
     }
 
     @GetMapping("/rank")

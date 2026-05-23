@@ -5,6 +5,7 @@ import ai.weixiu.config.RabbitMQConfig;
 import ai.weixiu.entity.*;
 import ai.weixiu.enumerate.PreferenceCategoryEnum;
 import ai.weixiu.service.*;
+import ai.weixiu.service.ManualRecommendService;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
@@ -37,6 +38,7 @@ public class MemoryResultListener {
     private final MemoryUnresolvedService memoryUnresolvedService;
     private final AiSessionService aiSessionService;
     private final AiMessageService aiMessageService;
+    private final ManualRecommendService manualRecommendService;
     private final RedisTemplate<String, Object> redisTemplate;
 
     @RabbitListener(queues = RabbitMQConfig.RESULT_QUEUE)
@@ -175,6 +177,10 @@ public class MemoryResultListener {
             if (cacheInvalidated) {
                 String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
                 redisTemplate.delete(prefCacheKey);
+                // 偏好变更后清除个性化推荐缓存，下次访问时重新计算
+                if (userId != null) {
+                    manualRecommendService.invalidateCache(userId);
+                }
             }
         }
 
@@ -273,6 +279,10 @@ public class MemoryResultListener {
             }
             String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
             redisTemplate.delete(prefCacheKey);
+            // 整合产生偏好变更后清除个性化推荐缓存
+            if (userId != null) {
+                manualRecommendService.invalidateCache(userId);
+            }
             log.info("[MQ结果] 保存偏好, 数量:{}", updatedPreferences.size());
         }
 

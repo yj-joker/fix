@@ -20,6 +20,7 @@ import ai.weixiu.service.AiSessionService;
 import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MemoryUnresolvedService;
 import ai.weixiu.mq.MemoryMessageProducer;
+import ai.weixiu.service.ManualRecommendService;
 import ai.weixiu.utils.BaseContext;
 import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import ai.weixiu.utils.VoiceToTextUtils;
@@ -57,6 +58,7 @@ public class AiServiceImpl implements AiService {
     private final AiMessageService aiMessageService;
     private final WebClient webClient;
     private final MemoryMessageProducer memoryMessageProducer;
+    private final ManualRecommendService manualRecommendService;
     private final RedisTemplate<String, Object> redisTemplate;
     private final MemoryPreferenceService memoryPreferenceService;
     private final MemoryUnresolvedService memoryUnresolvedService;
@@ -115,6 +117,9 @@ public class AiServiceImpl implements AiService {
                                 finalAiSession.getRoundCount(), maxMemory
                         );
                     }
+
+                    // ===== 异步刷新个性化推荐缓存 =====
+                    manualRecommendService.refreshAsync(userId);
                 });
     }
 
@@ -273,6 +278,8 @@ public class AiServiceImpl implements AiService {
         if (!unresolvedVOs.isEmpty()) {
             contextMap.put("unresolved_items", unresolvedVOs);
         }
+        // 传递userId供Python端工具（如recall_conversation_detail）使用
+        contextMap.put("user_id", userId);
         aiChatRequest.setContext(contextMap);
 
         // ========== 8. userMessage保持为当前用户的原始消息 ==========

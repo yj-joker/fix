@@ -16,4 +16,12 @@ import java.util.List;
 public interface MemoryPreferenceService extends IService<MemoryPreference> {
 
     List<MemoryPreference> getPreference(Long sessionId, Long userId);
+
+    /**
+     * 获取用户级偏好（跨会话有效，preferenceCategory = 0）
+     *
+     * @param userId 用户ID
+     * @return 用户级偏好列表
+     */
+    List<MemoryPreference> getUserLevelPreferences(Long userId);
 }

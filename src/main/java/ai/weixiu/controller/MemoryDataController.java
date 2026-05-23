@@ -5,8 +5,10 @@ import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.vo.MemoryIntegrationParametersVO;
 import ai.weixiu.pojo.vo.MemoryPreferenceVO;
 import ai.weixiu.pojo.vo.MemoryUnresolvedVO;
+import ai.weixiu.pojo.vo.RecallDetailVO;
 import ai.weixiu.service.AiMessageService;
 import ai.weixiu.service.AiSessionService;
+import ai.weixiu.service.MemoryFactService;
 import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MemoryUnresolvedService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -31,6 +33,7 @@ public class MemoryDataController {
 
     private final AiMessageService aiMessageService;
     private final AiSessionService aiSessionService;
+    private final MemoryFactService memoryFactService;
     private final MemoryPreferenceService memoryPreferenceService;
     private final MemoryUnresolvedService memoryUnresolvedService;
 
@@ -106,5 +109,101 @@ public class MemoryDataController {
         params.setMessageIds(messageIds);
 
         return Result.success(params);
+    }
+
+    /**
+     * 细节召回接口（供 Python FixAgent 的 recall_conversation_detail 工具调用）
+     *
+     * 流程：
+     * 1. 用 keywords 模糊匹配 MemoryFact 的 content 和 keywords 字段
+     * 2. 取匹配到的事实的 sourceSeqRange（如 "3-5"）
+     * 3. 用 sessionId + roundNo 范围查询 AiMessage 获取原始对话
+     * 4. 返回事实摘要 + 原始消息列表
+     */
+    @GetMapping("/recall-detail")
+    @Operation(summary = "召回事实关联的原始对话细节（供Python工具调用）")
+    public Result<List<RecallDetailVO>> recallDetail(
+            @RequestParam String keywords,
+            @RequestParam Long userId,
+            @RequestParam(defaultValue = "3") Integer maxFacts) {
+
+        // 1. 查出该用户所有会话ID
+        LambdaQueryWrapper<AiSession> sessionQuery = new LambdaQueryWrapper<>();
+        sessionQuery.eq(AiSession::getUserId, userId).select(AiSession::getId);
+        List<Long> userSessionIds = aiSessionService.list(sessionQuery)
+                .stream().map(AiSession::getId).toList();
+
+        if (userSessionIds.isEmpty()) {
+            return Result.success(List.of());
+        }
+
+        // 2. 模糊匹配 MemoryFact（content 或 keywords 包含关键词）
+        LambdaQueryWrapper<MemoryFact> factQuery = new LambdaQueryWrapper<>();
+        factQuery.in(MemoryFact::getSessionId, userSessionIds.stream().map(String::valueOf).toList())
+                .eq(MemoryFact::getStatus, "active")
+                .isNotNull(MemoryFact::getSourceSeqRange)
+                .and(w -> w.like(MemoryFact::getContent, keywords)
+                        .or()
+                        .like(MemoryFact::getKeywords, keywords))
+                .last("LIMIT " + maxFacts);
+
+        List<MemoryFact> matchedFacts = memoryFactService.list(factQuery);
+        if (matchedFacts.isEmpty()) {
+            log.info("[细节召回] 未找到匹配事实, keywords={}, userId={}", keywords, userId);
+            return Result.success(List.of());
+        }
+
+        // 3. 逐个事实召回原始消息
+        List<RecallDetailVO> results = new ArrayList<>();
+        for (MemoryFact fact : matchedFacts) {
+            String seqRange = fact.getSourceSeqRange();
+            if (seqRange == null || seqRange.isBlank()) continue;
+
+            // 解析 sourceSeqRange（格式："3-5" 或 "3"）
+            int startRound, endRound;
+            try {
+                if (seqRange.contains("-")) {
+                    String[] parts = seqRange.split("-");
+                    startRound = Integer.parseInt(parts[0].trim());
+                    endRound = Integer.parseInt(parts[1].trim());
+                } else {
+                    startRound = Integer.parseInt(seqRange.trim());
+                    endRound = startRound;
+                }
+            } catch (NumberFormatException e) {
+                log.warn("[细节召回] 无法解析 sourceSeqRange={}, factId={}", seqRange, fact.getId());
+                continue;
+            }
+
+            // 查询该事实所属会话的原始消息
+            Long sessionId = Long.valueOf(fact.getSessionId());
+            LambdaQueryWrapper<AiMessage> msgQuery = new LambdaQueryWrapper<>();
+            msgQuery.eq(AiMessage::getAiSessionId, sessionId)
+                    .ge(AiMessage::getRoundNo, startRound)
+                    .le(AiMessage::getRoundNo, endRound)
+                    .in(AiMessage::getRole, List.of("user", "assistant"))
+                    .orderByAsc(AiMessage::getRoundNo)
+                    .orderByAsc(AiMessage::getId);
+
+            List<AiMessage> messages = aiMessageService.list(msgQuery);
+
+            RecallDetailVO vo = new RecallDetailVO();
+            vo.setFactContent(fact.getContent());
+            vo.setSourceSeqRange(seqRange);
+
+            List<RecallDetailVO.MessageItem> items = new ArrayList<>();
+            for (AiMessage msg : messages) {
+                RecallDetailVO.MessageItem item = new RecallDetailVO.MessageItem();
+                item.setRole(msg.getRole());
+                item.setContent(msg.getContent());
+                item.setRoundNo(msg.getRoundNo());
+                items.add(item);
+            }
+            vo.setMessages(items);
+            results.add(vo);
+        }
+
+        log.info("[细节召回] 命中{}条事实, 召回{}条结果, keywords={}", matchedFacts.size(), results.size(), keywords);
+        return Result.success(results);
     }
 }

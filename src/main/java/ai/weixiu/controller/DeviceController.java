@@ -50,11 +50,11 @@ public class DeviceController {
     public Result<DeviceOverviewVO> findById(@PathVariable String id) {
         return Result.success(deviceService.getDeviceOverview(id));
     }
-     @GetMapping("/components")
+    @PostMapping("/components")
     @Operation(summary = "分页查询部件")
     public Result<PageResult<ComponentVO>> getComponents(@RequestBody DeviceQuery deviceQuery) {
         return Result.success(deviceService.getComponents(deviceQuery));
-     }
+    }
 
     @GetMapping("/search")
     @Operation(summary = "按关键字搜索设备（名称/编码/型号/位置模糊匹配）")
