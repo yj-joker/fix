@@ -1,5 +1,6 @@
 package ai.weixiu.config;
 
+import ai.weixiu.interceptor.RateLimitInterceptor;
 import ai.weixiu.interceptor.SessionInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -14,9 +15,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final SessionInterceptor sessionInterceptor;
+    private final RateLimitInterceptor rateLimitInterceptor;
 
-    public WebMvcConfig(SessionInterceptor sessionInterceptor) {
+    public WebMvcConfig(SessionInterceptor sessionInterceptor, RateLimitInterceptor rateLimitInterceptor) {
         this.sessionInterceptor = sessionInterceptor;
+        this.rateLimitInterceptor = rateLimitInterceptor;
     }
 
     @Override
@@ -31,8 +34,15 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // 1. 登录鉴权拦截器（最先执行）
         registry.addInterceptor(sessionInterceptor)
                 .addPathPatterns("/**")
-                .excludePathPatterns("/weixiu/user/login", "/weixiu/user/register");
+                .excludePathPatterns("/weixiu/user/login", "/weixiu/user/register")
+                .order(1);
+
+        // 2. AI接口限流拦截器（鉴权通过后再限流）
+        registry.addInterceptor(rateLimitInterceptor)
+                .addPathPatterns("/weixiu/ai/**")
+                .order(2);
     }
 }

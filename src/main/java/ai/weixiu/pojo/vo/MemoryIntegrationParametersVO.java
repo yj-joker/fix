@@ -29,4 +29,6 @@ public class MemoryIntegrationParametersVO {
      * 如果是首次整合（还没有旧摘要），此字段为null。
      */
     private String previousSummary;
+    /** 待整合消息的ID列表（整合完成后标记为已整合） */
+    private List<Long> messageIds;
 }

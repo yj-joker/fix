@@ -46,6 +46,9 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
     }
 
 
+    /** 单文件上传大小上限：10MB */
+    private static final long MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
     /**
      * 上传文件并返回可访问结果。
      *
@@ -55,11 +58,25 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
      */
     @Override
     public String upload(MultipartFile file, BucketEnum bucket) {
+        checkFileSize(file);
         // 生成唯一文件名，避免覆盖
         return switch (bucket) {
             case PUBLIC -> uploadPublicFile(file,bucket.getName());
             case PRIVATE -> uploadPrivateFile(file,bucket.getName());
         };
+    }
+
+    /**
+     * 校验文件大小是否超出限制（10MB）。
+     */
+    private void checkFileSize(MultipartFile file) {
+        if (file.getSize() > MAX_UPLOAD_SIZE) {
+            throw new UploadException(
+                    String.format("文件大小 %.2fMB 超出限制（最大 %dMB）",
+                            file.getSize() / (1024.0 * 1024.0),
+                            MAX_UPLOAD_SIZE / (1024 * 1024))
+            );
+        }
     }
 
     @Override
@@ -103,6 +120,7 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
      * 维修手册把这个值写入 minioObjectName 字段，后续详情访问、文件替换和删除都依赖它。</p>
      */
     public @NonNull String getObjectName(MultipartFile file, String name) {
+        checkFileSize(file);
         try {
             // 生成唯一文件名，避免覆盖
             String originalFilename = file.getOriginalFilename();

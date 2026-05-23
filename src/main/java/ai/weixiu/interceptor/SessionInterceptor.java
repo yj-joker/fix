@@ -21,10 +21,16 @@ import java.util.concurrent.TimeUnit;
 public class SessionInterceptor implements HandlerInterceptor {
     private final RedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final String internalToken;
 
-    public SessionInterceptor(RedisTemplate redisTemplate, ObjectMapper objectMapper) {
+    public SessionInterceptor(
+            RedisTemplate redisTemplate,
+            ObjectMapper objectMapper,
+            @org.springframework.beans.factory.annotation.Value("${ai.internal-token:fix-agent-internal-2026}") String internalToken
+    ) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.internalToken = internalToken;
     }
 
     @Override
@@ -35,6 +41,17 @@ public class SessionInterceptor implements HandlerInterceptor {
         // 放行登录和注册接口
         if (uri.contains("/login") || uri.contains("/register")) {
             return true;
+        }
+
+        // 内部服务接口：通过共享密钥鉴权（Python 等内部服务携带 X-Internal-Token 请求头）
+        if (uri.startsWith("/weixiu/memory/")) {
+            String token = request.getHeader("X-Internal-Token");
+            if (internalToken.equals(token)) {
+                return true;
+            }
+            log.warn("内部接口鉴权失败，拦截: {}", uri);
+            writeJsonResponse(response, Result.error("403", "禁止访问"));
+            return false;
         }
 
         // 从 Redis 中校验登录状态
@@ -56,7 +73,8 @@ public class SessionInterceptor implements HandlerInterceptor {
     }
 
     private void writeJsonResponse(HttpServletResponse response, Result result) throws IOException {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        int status = "403".equals(result.getCode()) ? HttpServletResponse.SC_FORBIDDEN : HttpServletResponse.SC_UNAUTHORIZED;
+        response.setStatus(status);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(objectMapper.writeValueAsString(result));
     }

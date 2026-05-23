@@ -27,6 +27,18 @@ spring:
     url: jdbc:mysql://localhost:3306/fix?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: mtdssq541yf
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
   data:
     redis:
       host: localhost
@@ -62,6 +74,8 @@ aliyun:
     bucket: yjjokerbucket
     access-key-id: LTAI5tG7fKiGCMaGwDmYGzTV
     access-key-secret: fzCpMr3FJDbO7KomwEY6kbzKhvy1b7
+ai:
+  internal-token: fix-agent-internal-2026
 apikey: sk-f199940e398640bc80501379bfd58bca
 baidu:
   speech:

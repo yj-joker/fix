@@ -19,11 +19,13 @@ import ai.weixiu.service.AiService;
 import ai.weixiu.service.AiSessionService;
 import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MemoryUnresolvedService;
-import ai.weixiu.utils.AsyncUtils;
+import ai.weixiu.mq.MemoryMessageProducer;
 import ai.weixiu.utils.BaseContext;
+import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import ai.weixiu.utils.VoiceToTextUtils;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
@@ -44,6 +46,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -53,10 +56,11 @@ public class AiServiceImpl implements AiService {
     private final AiSessionService aiSessionService;
     private final AiMessageService aiMessageService;
     private final WebClient webClient;
-    private final AsyncUtils asyncUtils;
+    private final MemoryMessageProducer memoryMessageProducer;
     private final RedisTemplate<String, Object> redisTemplate;
     private final MemoryPreferenceService memoryPreferenceService;
     private final MemoryUnresolvedService memoryUnresolvedService;
+    private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Integer maxMemory = 4;
     private final VoiceToTextUtils voiceToTextUtils ;
@@ -79,8 +83,15 @@ public class AiServiceImpl implements AiService {
         }
         // 将历史信息、偏好和待办事项拼接并设置到aiChatRequest
         finalAiContext(aiChatRequest, aiSession.getId(), userId, memoryMessages);
+
+        // ===== 图片URL转Base64（解决云端LLM无法访问本地MinIO的问题）=====
+        if (aiChatRequest.getImages() != null && !aiChatRequest.getImages().isEmpty()) {
+            List<String> base64Images = multimodalEmbeddingUtils.downloadImagesToBase64(aiChatRequest.getImages());
+            aiChatRequest.setImages(base64Images);
+            log.info("已将{}张MinIO图片转为Base64", base64Images.size());
+        }
+
         log.info("最终消息: {}", aiChatRequest.getUserMessage());
-        log.info("最终对象的JSON格式: {}", JSONUtil.toJsonStr(aiChatRequest));
         Flux<String> flux = getStringFlux(aiChatRequest, uri);
         StringBuilder fullResponse = new StringBuilder();
         AiSession finalAiSession = aiSession;
@@ -89,19 +100,20 @@ public class AiServiceImpl implements AiService {
                 .doOnComplete(() -> {
                     saveAiReply(finalAiSession, userId, fullResponse);
 
-                    // ===== 实时记忆更新：每轮对话后异步检测事实纠正和偏好变更 =====
-                    // 不阻塞主流程，2-3秒内完成，立即生效
-                    asyncUtils.realtimeMemoryUpdate(
+                    // ===== 实时记忆更新：发MQ消息，Python异步消费 =====
+                    memoryMessageProducer.sendRealtimeUpdate(
                             finalAiSession.getId(),
                             userId,
                             aiChatRequest.getUserMessage(),
                             fullResponse.toString()
                     );
 
-                    // ===== 定时整合：每maxMemory轮触发完整整合 =====
-                    // 处理新事实提取、待办更新、摘要更新等非紧急任务
+                    // ===== 定时整合：每maxMemory轮发MQ消息 =====
                     if (finalAiSession.getRoundCount() % maxMemory == 0) {
-                        asyncUtils.integrationMemory(finalAiSession.getRoundCount(), finalAiSession.getId(), userId, maxMemory);
+                        memoryMessageProducer.sendConsolidate(
+                                finalAiSession.getId(), userId,
+                                finalAiSession.getRoundCount(), maxMemory
+                        );
                     }
                 });
     }
@@ -182,44 +194,25 @@ public class AiServiceImpl implements AiService {
         AiSession currentSession = aiSessionService.getById(sessionId);
         String previousSummary = (currentSession != null) ? currentSession.getSummary() : null;
 
-        // ========== 2. 从Python向量库检索与当前用户消息相关的历史事实 ==========
-        List<JSONObject> relevantFacts = searchRelevantFacts(originalUserMessage);
+        // ========== 2/3/4. 三个独立查询并行执行（节省 ~100-150ms） ==========
+        // 事实检索（调用Python向量库，最慢 ~200ms）
+        CompletableFuture<List<JSONObject>> factsFuture =
+                CompletableFuture.supplyAsync(() -> searchRelevantFacts(originalUserMessage, userId));
 
-        // ========== 3. 获取偏好（优先从Redis缓存读取） ==========
-        String cacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
-        CachedPreferences cached = (CachedPreferences) redisTemplate.opsForValue().get(cacheKey);
+        // 偏好查询（Redis缓存或MySQL，~50ms）
+        CompletableFuture<List<MemoryPreference>> preferencesFuture =
+                CompletableFuture.supplyAsync(() -> loadPreferences(sessionId, userId));
 
-        List<MemoryPreference> allPreferences;
-        if (cached != null) {
-            // 缓存命中，直接使用
-            allPreferences = new ArrayList<>();
-            if (cached.getUserPreferences() != null) {
-                allPreferences.addAll(cached.getUserPreferences());
-            }
-            if (cached.getSessionPreferences() != null) {
-                allPreferences.addAll(cached.getSessionPreferences());
-            }
-        } else {
-            // 缓存未命中，从数据库查询并写入缓存
-            allPreferences = memoryPreferenceService.getPreference(sessionId, userId);
-            if (!allPreferences.isEmpty()) {
-                List<MemoryPreference> userPrefs = new ArrayList<>();
-                List<MemoryPreference> sessionPrefs = new ArrayList<>();
-                for (MemoryPreference pref : allPreferences) {
-                    if (pref.getPreferenceCategory() != null
-                            && pref.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
-                        userPrefs.add(pref);
-                    } else {
-                        sessionPrefs.add(pref);
-                    }
-                }
-                CachedPreferences toCache = new CachedPreferences(userPrefs, sessionPrefs);
-                redisTemplate.opsForValue().set(cacheKey, toCache, 5, TimeUnit.HOURS);
-            }
-        }
+        // 待办查询（MySQL，~50ms）
+        CompletableFuture<List<MemoryUnresolved>> unresolvedFuture =
+                CompletableFuture.supplyAsync(() -> memoryUnresolvedService.getUnresolved(sessionId));
 
-        // ========== 4. 获取未解决的待办事项 ==========
-        List<MemoryUnresolved> unresolved = memoryUnresolvedService.getUnresolved(sessionId);
+        // 等待三个任务全部完成
+        CompletableFuture.allOf(factsFuture, preferencesFuture, unresolvedFuture).join();
+
+        List<JSONObject> relevantFacts = factsFuture.join();
+        List<MemoryPreference> allPreferences = preferencesFuture.join();
+        List<MemoryUnresolved> unresolved = unresolvedFuture.join();
 
         // ========== 5. 转换为VO对象 ==========
         List<MemoryPreferenceVO> userPrefVOs = new ArrayList<>();
@@ -288,6 +281,42 @@ public class AiServiceImpl implements AiService {
     }
 
     /**
+     * 加载用户偏好（优先Redis缓存，未命中则查MySQL并回写缓存）
+     */
+    private List<MemoryPreference> loadPreferences(Long sessionId, Long userId) {
+        String cacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
+        CachedPreferences cached = (CachedPreferences) redisTemplate.opsForValue().get(cacheKey);
+
+        if (cached != null) {
+            List<MemoryPreference> result = new ArrayList<>();
+            if (cached.getUserPreferences() != null) {
+                result.addAll(cached.getUserPreferences());
+            }
+            if (cached.getSessionPreferences() != null) {
+                result.addAll(cached.getSessionPreferences());
+            }
+            return result;
+        }
+
+        List<MemoryPreference> allPreferences = memoryPreferenceService.getPreference(sessionId, userId);
+        if (!allPreferences.isEmpty()) {
+            List<MemoryPreference> userPrefs = new ArrayList<>();
+            List<MemoryPreference> sessionPrefs = new ArrayList<>();
+            for (MemoryPreference pref : allPreferences) {
+                if (pref.getPreferenceCategory() != null
+                        && pref.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
+                    userPrefs.add(pref);
+                } else {
+                    sessionPrefs.add(pref);
+                }
+            }
+            CachedPreferences toCache = new CachedPreferences(userPrefs, sessionPrefs);
+            redisTemplate.opsForValue().set(cacheKey, toCache, 5, TimeUnit.HOURS);
+        }
+        return allPreferences;
+    }
+
+    /**
      * 调用Python端向量检索接口，查找与用户消息语义最相关的历史事实
      *
      * 【工作原理】
@@ -301,14 +330,21 @@ public class AiServiceImpl implements AiService {
      * @param userMessage 用户当前发送的消息
      * @return 相关事实列表，每条包含 content/score/keywords 等字段
      */
-    private List<JSONObject> searchRelevantFacts(String userMessage) {
+    private List<JSONObject> searchRelevantFacts(String userMessage, Long userId) {
         try {
+            // 查出当前用户的所有会话ID，用于过滤事实（防止检索到其他用户的事实）
+            LambdaQueryWrapper<AiSession> sessionQuery = new LambdaQueryWrapper<>();
+            sessionQuery.eq(AiSession::getUserId, userId).select(AiSession::getId);
+            List<String> userSessionIds = aiSessionService.list(sessionQuery)
+                    .stream().map(s -> s.getId().toString()).toList();
+
             // 调用Python端的事实检索接口
             String response = webClient.post()
                     .uri(uriBuilder -> uriBuilder
                             .path("/ai/memory/search_facts")
                             .queryParam("query", userMessage)
                             .queryParam("top_k", 5)
+                            .queryParam("session_ids", String.join(",", userSessionIds))
                             .build())
                     .retrieve()
                     .bodyToMono(String.class)

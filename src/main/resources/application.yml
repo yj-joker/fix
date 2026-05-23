@@ -29,6 +29,18 @@ spring:
     url: jdbc:mysql://localhost:3306/fix?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: ${MYSQL_USER}
     password: ${MYSQL_PASSWORD}
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT}
+    username: ${RABBITMQ_USER}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
   data:
     redis:
       host: ${REDIS_HOST}
@@ -67,6 +79,7 @@ aliyun:
 apikey: ${APIKEY}
 ai:
   python-service-url: http://localhost:8000
+  internal-token: ${INTERNAL_TOKEN:fix-agent-internal-2026}
 baidu:
   speech:
     app-id: ${BAIDU_APP_ID}

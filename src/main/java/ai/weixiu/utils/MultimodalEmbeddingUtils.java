@@ -93,6 +93,11 @@ public class MultimodalEmbeddingUtils {
                 }
             }
 
+            if (body.isEmpty()) {
+                log.warn("多模态向量化：文本为空且图片全部无效，跳过调用");
+                return null;
+            }
+
             String response = webClient.post()
                     .uri("/ai/embedding/multimodal")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -124,8 +129,11 @@ public class MultimodalEmbeddingUtils {
     /**
      * 从 MinIO 下载图片并转为 base64 data URI
      * URL 格式: http://localhost:9000/bucket-name/objectName.jpg
+     *
+     * <p>供外部调用（如 AiServiceImpl 在发送给 Python 前将 MinIO URL 转为 Base64，
+     * 解决云端 LLM 无法访问 localhost MinIO 的问题）。</p>
      */
-    private List<String> downloadImagesToBase64(List<String> imageUrls) {
+    public List<String> downloadImagesToBase64(List<String> imageUrls) {
         List<String> base64List = new ArrayList<>();
         for (String url : imageUrls) {
             try {
@@ -133,7 +141,15 @@ public class MultimodalEmbeddingUtils {
                 // 格式: http://host:port/bucket/objectName
                 URI uri = URI.create(url);
                 String path = uri.getPath(); // /bucket/objectName
+                if (path == null || path.length() <= 1) {
+                    log.warn("图片 URL 路径为空，跳过: {}", url);
+                    continue;
+                }
                 int firstSlash = path.indexOf('/', 1);
+                if (firstSlash < 0 || firstSlash + 1 >= path.length()) {
+                    log.warn("图片 URL 格式不正确（缺少 bucket/objectName），跳过: {}", url);
+                    continue;
+                }
                 String bucket = path.substring(1, firstSlash);
                 String objectName = path.substring(firstSlash + 1);
 
