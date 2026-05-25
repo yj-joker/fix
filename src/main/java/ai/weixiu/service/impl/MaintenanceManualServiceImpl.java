@@ -76,7 +76,15 @@ public class MaintenanceManualServiceImpl
         evictManualCache(manual.getId());
 
         // 2. 上传第一版文档
-        knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
+        KnowledgeDocument doc = knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
+
+        // 3. 将文件信息回写到 manual，保证返回给前端的数据完整
+        manual.setFileName(doc.getFileName());
+        manual.setFileType(doc.getFileType());
+        manual.setFileSize(doc.getFileSize());
+        manual.setMinioObjectName(doc.getMinioObjectName());
+        updateById(manual);
+        evictManualCache(manual.getId());
 
         log.info("新增手册成功: {}, 已发起 v1 解析", manual.getId());
         return manual;

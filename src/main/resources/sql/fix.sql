@@ -119,7 +119,7 @@ CREATE TABLE maintenance_manual (
                                     manual_desc VARCHAR(500) NULL COMMENT '手册描述',
 
                                     file_name VARCHAR(255) NOT NULL COMMENT '原始文件名',
-                                    file_type VARCHAR(20) NOT NULL COMMENT '文件类型，如 pdf、doc、docx',
+                                    file_type VARCHAR(20) NOT NULL COMMENT '文件类型，如 pdf',
                                     file_size BIGINT NOT NULL DEFAULT 0 COMMENT '文件大小，单位字节',
                                     minio_object_name VARCHAR(500) NOT NULL COMMENT 'MinIO对象名',
 
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS knowledge_document (
                                                   document_id       VARCHAR(64)  NOT NULL COMMENT '传给Python向量库的唯一标识',
                                                   version           INT          NOT NULL DEFAULT 1 COMMENT '版本号',
                                                   file_name         VARCHAR(255) NOT NULL COMMENT '原始文件名',
-                                                  file_type         VARCHAR(20)  NOT NULL COMMENT '文件类型: pdf, doc, docx',
+                                                  file_type         VARCHAR(20)  NOT NULL COMMENT '文件类型: pdf',
                                                   file_size         BIGINT       NOT NULL DEFAULT 0 COMMENT '文件大小(字节)',
                                                   minio_object_name VARCHAR(500) NOT NULL COMMENT 'MinIO私有桶对象名',
                                                   status            VARCHAR(20)  NOT NULL DEFAULT 'pending' COMMENT 'pending/parsing/indexing/ready/failed',

@@ -27,7 +27,7 @@ public class KnowledgeImportProducer {
      *
      * @param documentId      新版本文档唯一标识（= knowledge_document.document_id）
      * @param fileUrl         文档预签名 URL
-     * @param fileType        文件类型（pdf/docx/txt）
+     * @param fileType        文件类型（pdf）
      * @param category        全局分类标签（可选）
      * @param userId          操作用户ID
      * @param documentVersion 版本标识如 "v1"（可选）

@@ -22,7 +22,7 @@ public class MaintenanceManualVO {
     /** 上传时的原始文件名。 */
     private String fileName;
 
-    /** 文件后缀类型，例如 .pdf、.doc、.docx。 */
+    /** 文件后缀类型，例如 .pdf。 */
     private String fileType;
 
     /** 文件大小，单位为字节。 */

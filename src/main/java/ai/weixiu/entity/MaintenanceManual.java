@@ -50,7 +50,7 @@ public class MaintenanceManual implements Serializable {
     private String fileName;
 
     /**
-     * 文件类型，如 pdf、doc、docx
+     * 文件类型，如 pdf
      */
     private String fileType;
 

@@ -45,11 +45,9 @@ public class KnowledgeDocumentServiceImpl
     /** 版本号分配锁前缀，按 manualId 加锁保证串行 */
     private static final String VERSION_LOCK_PREFIX = "knowledge:version:lock:";
 
-    private static final List<String> FILE_EXTENSIONS = List.of(".pdf", ".doc", ".docx");
+    private static final List<String> FILE_EXTENSIONS = List.of(".pdf");
     private static final List<String> FILE_CONTENT_TYPES = List.of(
             "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/octet-stream"
     );
 
@@ -266,7 +264,7 @@ public class KnowledgeDocumentServiceImpl
         boolean validContentType = contentType != null
                 && FILE_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT));
         if (!validExtension || !validContentType) {
-            throw new FormatErrorException("仅支持 pdf、doc、docx 文件");
+            throw new FormatErrorException("仅支持 PDF 文件");
         }
     }
 
