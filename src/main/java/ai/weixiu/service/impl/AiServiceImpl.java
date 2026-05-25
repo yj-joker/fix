@@ -107,7 +107,8 @@ public class AiServiceImpl implements AiService {
                             finalAiSession.getId(),
                             userId,
                             aiChatRequest.getUserMessage(),
-                            fullResponse.toString()
+                            fullResponse.toString(),
+                            finalAiSession.getRoundCount()
                     );
 
                     // ===== 定时整合：每maxMemory轮发MQ消息 =====

@@ -424,12 +424,13 @@ public class AsyncUtils {
      * 每轮对话完成后异步调用，检测事实纠正和偏好变更并立即生效
      */
     @Async
-    public void realtimeMemoryUpdate(Long sessionId, Long userId, String userMessage, String aiResponse) {
+    public void realtimeMemoryUpdate(Long sessionId, Long userId, String userMessage, String aiResponse, Integer currentRound) {
         try {
             JSONObject requestBody = new JSONObject();
             requestBody.set("session_id", sessionId.toString());
             requestBody.set("user_message", userMessage);
             requestBody.set("ai_response", aiResponse);
+            requestBody.set("current_round", currentRound);
 
             WebClient webClient = WebClient.builder()
                     .baseUrl("http://127.0.0.1:8000")
@@ -474,9 +475,10 @@ public class AsyncUtils {
                 log.info("[实时记忆] 标记旧事实为已替代, 数量:{}", factIds.size());
             }
 
-            // 保存新的正确事实（使用Python返回的向量库doc_id作为factId）
+            // 保存新的正确事实（合并旧sourceSeqRange + 当前纠正轮次）
             JSONArray factCorrections = result.getJSONArray("fact_corrections");
             JSONArray newFactIds = result.getJSONArray("new_fact_ids");
+            JSONArray oldSeqRanges = result.getJSONArray("old_seq_ranges");
             if (factCorrections != null && !factCorrections.isEmpty()) {
                 List<MemoryFact> newFacts = new ArrayList<>();
                 for (int i = 0; i < factCorrections.size(); i++) {
@@ -490,6 +492,11 @@ public class AsyncUtils {
                     memoryFact.setContent(correction.getStr("correct_content"));
                     memoryFact.setKeywords(correction.getStr("keywords"));
                     memoryFact.setStatus("active");
+
+                    // 合并 sourceSeqRange：旧事实的范围 + 当前纠正轮次
+                    String oldRange = (oldSeqRanges != null && i < oldSeqRanges.size()) ? oldSeqRanges.getStr(i) : "";
+                    memoryFact.setSourceSeqRange(mergeSeqRange(oldRange, currentRound));
+
                     newFacts.add(memoryFact);
                 }
                 memoryFactService.saveBatch(newFacts);
@@ -564,5 +571,22 @@ public class AsyncUtils {
         } catch (Exception e) {
             log.error("[实时记忆] 实时记忆更新失败, 会话ID:{}, 错误:{}", sessionId, e.getMessage(), e);
         }
+    }
+
+    /**
+     * 合并旧事实的 sourceSeqRange 和当前纠正轮次
+     *
+     * 示例：
+     *   oldRange="3-5", currentRound=9  → "3-5,9"
+     *   oldRange="",    currentRound=9  → "9"
+     *   oldRange="3-5", currentRound=null → "3-5"
+     */
+    private String mergeSeqRange(String oldRange, Integer currentRound) {
+        boolean hasOld = oldRange != null && !oldRange.isBlank();
+        boolean hasNew = currentRound != null;
+        if (hasOld && hasNew) return oldRange + "," + currentRound;
+        if (hasOld) return oldRange;
+        if (hasNew) return String.valueOf(currentRound);
+        return null;
     }
 }

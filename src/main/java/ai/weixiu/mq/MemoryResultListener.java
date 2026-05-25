@@ -65,7 +65,9 @@ public class MemoryResultListener {
             }
 
             if ("realtime_update".equals(type)) {
-                processRealtimeResult(data, sessionId, userId);
+                Number currentRoundNum = (Number) msg.get("currentRound");
+                Integer currentRound = currentRoundNum != null ? currentRoundNum.intValue() : null;
+                processRealtimeResult(data, sessionId, userId, currentRound);
             } else if ("consolidation".equals(type)) {
                 processConsolidationResult(data, sessionId, userId);
             } else {
@@ -79,7 +81,7 @@ public class MemoryResultListener {
         }
     }
 
-    private void processRealtimeResult(Map<String, Object> data, String sessionId, Long userId) {
+    private void processRealtimeResult(Map<String, Object> data, String sessionId, Long userId, Integer currentRound) {
         boolean hasUpdate = Boolean.TRUE.equals(data.get("has_update"));
         if (!hasUpdate) {
             log.debug("[MQ结果] 实时更新无变更, 会话ID:{}", sessionId);
@@ -103,9 +105,10 @@ public class MemoryResultListener {
             log.info("[MQ结果] 标记旧事实为已替代, 数量:{}", factIds.size());
         }
 
-        // 保存纠正事实
+        // 保存纠正事实（合并旧事实的sourceSeqRange + 当前纠正轮次）
         JSONArray factCorrections = result.getJSONArray("fact_corrections");
         JSONArray newFactIds = result.getJSONArray("new_fact_ids");
+        JSONArray oldSeqRanges = result.getJSONArray("old_seq_ranges");
         if (factCorrections != null && !factCorrections.isEmpty()) {
             List<MemoryFact> newFacts = new ArrayList<>();
             for (int i = 0; i < factCorrections.size(); i++) {
@@ -118,6 +121,11 @@ public class MemoryResultListener {
                 memoryFact.setContent(correction.getStr("correct_content"));
                 memoryFact.setKeywords(correction.getStr("keywords"));
                 memoryFact.setStatus("active");
+
+                // 合并 sourceSeqRange：旧事实的范围 + 当前纠正轮次
+                String oldRange = (oldSeqRanges != null && i < oldSeqRanges.size()) ? oldSeqRanges.getStr(i) : "";
+                memoryFact.setSourceSeqRange(mergeSeqRange(oldRange, currentRound));
+
                 newFacts.add(memoryFact);
             }
             memoryFactService.saveBatch(newFacts);
@@ -361,5 +369,28 @@ public class MemoryResultListener {
             maxSeq = Math.max(maxSeq, lastUnresolved.getConsolidationSeq());
         }
         return maxSeq + 1;
+    }
+
+    /**
+     * 合并旧事实的 sourceSeqRange 和当前纠正轮次
+     *
+     * 示例：
+     *   oldRange="3-5", currentRound=9  → "3-5,9"
+     *   oldRange="",    currentRound=9  → "9"
+     *   oldRange="3-5", currentRound=null → "3-5"
+     *   oldRange=null,  currentRound=null → null
+     */
+    private String mergeSeqRange(String oldRange, Integer currentRound) {
+        boolean hasOld = oldRange != null && !oldRange.isBlank();
+        boolean hasNew = currentRound != null;
+
+        if (hasOld && hasNew) {
+            return oldRange + "," + currentRound;
+        } else if (hasOld) {
+            return oldRange;
+        } else if (hasNew) {
+            return String.valueOf(currentRound);
+        }
+        return null;
     }
 }

@@ -18,13 +18,14 @@ public class MemoryMessageProducer {
 
     private final RabbitTemplate rabbitTemplate;
 
-    public void sendRealtimeUpdate(Long sessionId, Long userId, String userMessage, String aiResponse) {
+    public void sendRealtimeUpdate(Long sessionId, Long userId, String userMessage, String aiResponse, Integer currentRound) {
         Map<String, Object> msg = new HashMap<>();
         msg.put("messageId", UUID.randomUUID().toString());
         msg.put("sessionId", sessionId);
         msg.put("userId", userId);
         msg.put("userMessage", userMessage);
         msg.put("aiResponse", aiResponse);
+        msg.put("currentRound", currentRound);
         msg.put("createdAt", LocalDateTime.now().toString());
 
         try {

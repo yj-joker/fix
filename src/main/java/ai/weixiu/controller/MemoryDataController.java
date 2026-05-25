@@ -159,29 +159,31 @@ public class MemoryDataController {
             String seqRange = fact.getSourceSeqRange();
             if (seqRange == null || seqRange.isBlank()) continue;
 
-            // 解析 sourceSeqRange（格式："3-5" 或 "3"）
-            int startRound, endRound;
-            try {
-                if (seqRange.contains("-")) {
-                    String[] parts = seqRange.split("-");
-                    startRound = Integer.parseInt(parts[0].trim());
-                    endRound = Integer.parseInt(parts[1].trim());
-                } else {
-                    startRound = Integer.parseInt(seqRange.trim());
-                    endRound = startRound;
-                }
-            } catch (NumberFormatException e) {
+            // 解析 sourceSeqRange，支持三种格式：
+            //   "3"     → 单轮 → [(3,3)]
+            //   "3-5"   → 连续范围 → [(3,5)]
+            //   "3-5,9" → 多段（含纠正轮次）→ [(3,5), (9,9)]
+            List<int[]> segments = parseSeqRange(seqRange);
+            if (segments.isEmpty()) {
                 log.warn("[细节召回] 无法解析 sourceSeqRange={}, factId={}", seqRange, fact.getId());
                 continue;
             }
 
-            // 查询该事实所属会话的原始消息
+            // 查询该事实所属会话的原始消息（多段用 OR 拼接）
             Long sessionId = Long.valueOf(fact.getSessionId());
             LambdaQueryWrapper<AiMessage> msgQuery = new LambdaQueryWrapper<>();
             msgQuery.eq(AiMessage::getAiSessionId, sessionId)
-                    .ge(AiMessage::getRoundNo, startRound)
-                    .le(AiMessage::getRoundNo, endRound)
                     .in(AiMessage::getRole, List.of("user", "assistant"))
+                    .and(outer -> {
+                        for (int i = 0; i < segments.size(); i++) {
+                            int[] seg = segments.get(i);
+                            if (i == 0) {
+                                outer.between(AiMessage::getRoundNo, seg[0], seg[1]);
+                            } else {
+                                outer.or().between(AiMessage::getRoundNo, seg[0], seg[1]);
+                            }
+                        }
+                    })
                     .orderByAsc(AiMessage::getRoundNo)
                     .orderByAsc(AiMessage::getId);
 
@@ -205,5 +207,46 @@ public class MemoryDataController {
 
         log.info("[细节召回] 命中{}条事实, 召回{}条结果, keywords={}", matchedFacts.size(), results.size(), keywords);
         return Result.success(results);
+    }
+
+    /**
+     * 解析 sourceSeqRange 字符串为多段 [start, end] 列表
+     *
+     * 支持格式：
+     *   "3"       → [(3,3)]           单轮
+     *   "3-5"     → [(3,5)]           连续范围
+     *   "3-5,9"   → [(3,5),(9,9)]     多段（原始讨论 + 纠正轮次）
+     *   "3-5,9-11"→ [(3,5),(9,11)]    多段连续范围
+     *
+     * 生成的 SQL 效果：
+     *   单段 "3-5"       → WHERE round_no BETWEEN 3 AND 5
+     *   多段 "3-5,9"     → WHERE (round_no BETWEEN 3 AND 5) OR (round_no BETWEEN 9 AND 9)
+     *   多段 "3-5,9-11"  → WHERE (round_no BETWEEN 3 AND 5) OR (round_no BETWEEN 9 AND 11)
+     */
+    private List<int[]> parseSeqRange(String seqRange) {
+        List<int[]> segments = new ArrayList<>();
+        try {
+            // 按逗号分割多段
+            String[] parts = seqRange.split(",");
+            for (String part : parts) {
+                part = part.trim();
+                if (part.isEmpty()) continue;
+
+                if (part.contains("-")) {
+                    // 范围段："3-5"
+                    String[] range = part.split("-");
+                    int start = Integer.parseInt(range[0].trim());
+                    int end = Integer.parseInt(range[1].trim());
+                    segments.add(new int[]{start, end});
+                } else {
+                    // 单轮段："9"
+                    int single = Integer.parseInt(part);
+                    segments.add(new int[]{single, single});
+                }
+            }
+        } catch (NumberFormatException e) {
+            log.warn("[细节召回] sourceSeqRange 格式异常: {}", seqRange);
+        }
+        return segments;
     }
 }
