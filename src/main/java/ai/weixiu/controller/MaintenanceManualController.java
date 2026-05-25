@@ -65,9 +65,10 @@ public class MaintenanceManualController {
      * <p>该接口接收 multipart/form-data，因此使用 {@link ModelAttribute} 绑定普通字段，
      * 再用 file 参数接收真正的文档文件。</p>
      */
-    public Result<MaintenanceManual> save(@ModelAttribute MaintenanceManualDTO maintenanceManualDTO,
+    public Result<MaintenanceManualVO> save(@ModelAttribute MaintenanceManualDTO maintenanceManualDTO,
                                           @RequestParam("file") MultipartFile file) {
-        return Result.success(maintenanceManualService.add(maintenanceManualDTO, file));
+        MaintenanceManual manual = maintenanceManualService.add(maintenanceManualDTO, file);
+        return Result.success(maintenanceManualService.getManualDetailById(manual.getId()));
     }
 
     @DeleteMapping("/{id}")
@@ -85,9 +86,10 @@ public class MaintenanceManualController {
      *
      * <p>当 file 缺省时只改基础字段；当 file 存在时同步替换 MinIO 中的手册文档。</p>
      */
-    public Result<MaintenanceManual> update(@ModelAttribute MaintenanceManualDTO maintenanceManualDTO,
+    public Result<MaintenanceManualVO> update(@ModelAttribute MaintenanceManualDTO maintenanceManualDTO,
                                             @RequestParam(value = "file", required = false) MultipartFile file) {
-        return Result.success(maintenanceManualService.update(maintenanceManualDTO, file));
+        MaintenanceManual manual = maintenanceManualService.update(maintenanceManualDTO, file);
+        return Result.success(maintenanceManualService.getManualDetailById(manual.getId()));
     }
 
     @GetMapping("/{id}")
