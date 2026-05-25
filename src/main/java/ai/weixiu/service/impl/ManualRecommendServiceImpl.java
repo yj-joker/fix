@@ -2,9 +2,11 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.common.RedisKey;
 import ai.weixiu.entity.AiMessage;
+import ai.weixiu.entity.KnowledgeDocument;
 import ai.weixiu.entity.MaintenanceManual;
 import ai.weixiu.entity.MemoryPreference;
 import ai.weixiu.pojo.vo.ManualRecommendVO;
+import ai.weixiu.service.KnowledgeDocumentService;
 import ai.weixiu.service.ManualRecommendService;
 import ai.weixiu.service.MemoryPreferenceService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -47,6 +49,7 @@ public class ManualRecommendServiceImpl implements ManualRecommendService {
     private final AiMessageMapper aiMessageMapper;
     private final MaintenanceManualMapper maintenanceManualMapper;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final KnowledgeDocumentService knowledgeDocumentService;
 
     /** 推荐缓存 TTL：2小时 */
     private static final long CACHE_TTL_HOURS = 2;
@@ -197,11 +200,10 @@ public class ManualRecommendServiceImpl implements ManualRecommendService {
                 vo.setManualName(manual.getManualName());
                 vo.setManualDesc(manual.getManualDesc());
                 vo.setManualImage(manual.getManualImage());
-                vo.setFileType(manual.getFileType());
-                vo.setFileSize(manual.getFileSize());
                 vo.setCreatedAt(manual.getCreatedAt());
                 vo.setScore(0);
                 vo.setReason("最新手册");
+                fillFileInfoFromActiveDoc(vo, manual);
                 result.add(vo);
             }
         }
@@ -456,11 +458,10 @@ public class ManualRecommendServiceImpl implements ManualRecommendService {
             vo.setManualName(m.getManualName());
             vo.setManualDesc(m.getManualDesc());
             vo.setManualImage(m.getManualImage());
-            vo.setFileType(m.getFileType());
-            vo.setFileSize(m.getFileSize());
             vo.setCreatedAt(m.getCreatedAt());
             vo.setScore(0);
             vo.setReason("最新手册");
+            fillFileInfoFromActiveDoc(vo, m);
             return vo;
         }).collect(Collectors.toList());
     }
@@ -472,12 +473,29 @@ public class ManualRecommendServiceImpl implements ManualRecommendService {
         vo.setManualName(m.getManualName());
         vo.setManualDesc(m.getManualDesc());
         vo.setManualImage(m.getManualImage());
-        vo.setFileType(m.getFileType());
-        vo.setFileSize(m.getFileSize());
         vo.setCreatedAt(m.getCreatedAt());
         vo.setScore(Math.round(scored.totalScore * 100.0) / 100.0);
         vo.setReason(scored.reason);
+        fillFileInfoFromActiveDoc(vo, m);
         return vo;
+    }
+
+    /**
+     * 从 active KnowledgeDocument 填充文件信息。
+     * 兼容旧数据：active_document_id 为空时回退到 manual 本身的字段。
+     */
+    private void fillFileInfoFromActiveDoc(ManualRecommendVO vo, MaintenanceManual manual) {
+        if (manual.getActiveDocumentId() != null) {
+            KnowledgeDocument activeDoc = knowledgeDocumentService.getById(manual.getActiveDocumentId());
+            if (activeDoc != null) {
+                vo.setFileType(activeDoc.getFileType());
+                vo.setFileSize(activeDoc.getFileSize());
+                return;
+            }
+        }
+        // 兼容旧数据
+        vo.setFileType(manual.getFileType());
+        vo.setFileSize(manual.getFileSize());
     }
 
     // ==================== 内部数据结构 ====================

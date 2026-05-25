@@ -46,8 +46,8 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
     }
 
 
-    /** 单文件上传大小上限：10MB */
-    private static final long MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+    /** 单文件上传大小上限：50MB */
+    private static final long MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 
     /**
      * 上传文件并返回可访问结果。
@@ -67,7 +67,7 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
     }
 
     /**
-     * 校验文件大小是否超出限制（10MB）。
+     * 校验文件大小是否超出限制（50MB）。
      */
     private void checkFileSize(MultipartFile file) {
         if (file.getSize() > MAX_UPLOAD_SIZE) {

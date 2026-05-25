@@ -7,6 +7,7 @@ import ai.weixiu.enumerate.BucketEnum;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.NullException;
 import ai.weixiu.mapper.MaintenanceManualMapper;
+import ai.weixiu.mq.KnowledgeImportProducer;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.MaintenanceManualDTO;
 import ai.weixiu.pojo.query.MaintenanceManualQuery;
@@ -44,14 +45,20 @@ public class MaintenanceManualServiceImpl
         extends ServiceImpl<MaintenanceManualMapper, MaintenanceManual>
         implements MaintenanceManualService {
 
-    private static final String MANUAL_NOT_FOUND = "Maintenance manual not found";
+    /** 手册不存在提示。 */
+    private static final String MANUAL_NOT_FOUND = "维修手册不存在";
+
+    /** Redis 中的空值占位符，用于缓存不存在的手册 id，降低穿透压力。 */
     private static final String EMPTY_CACHE_VALUE = "__NULL__";
+
+    /** 私有桶文档预签名地址有效时长（分钟）。 */
     private static final int PRIVATE_FILE_URL_EXPIRY_MINUTES = 120;
 
     private final MioIOUpLoadService mioIOUpLoadService;
     private final RedisTemplate<String, Object> redisTemplate;
     private final RedissonClient redissonClient;
     private final KnowledgeDocumentService knowledgeDocumentService;
+    private final KnowledgeImportProducer knowledgeImportProducer;
 
     @Override
     @Transactional
@@ -80,9 +87,19 @@ public class MaintenanceManualServiceImpl
     public void deleteById(Long id) {
         MaintenanceManual manual = getManualById(id);
 
-        // 删除所有版本的文档记录和 MinIO 文件
+        // 删除所有版本的文档记录、MinIO 文件，并通知 Python 清理向量
         List<KnowledgeDocument> versions = knowledgeDocumentService.listVersions(id);
         for (KnowledgeDocument doc : versions) {
+            // 通知 Python 删除该版本在向量库中的所有数据
+            if (StringUtils.hasText(doc.getDocumentId())) {
+                try {
+                    knowledgeImportProducer.sendDeleteTask(doc.getDocumentId());
+                } catch (Exception e) {
+                    log.warn("发送向量删除消息失败: documentId={}", doc.getDocumentId(), e);
+                }
+            }
+
+            // 删除 MinIO 私有桶中的源文件
             if (StringUtils.hasText(doc.getMinioObjectName())) {
                 try {
                     mioIOUpLoadService.delete(doc.getMinioObjectName(), BucketEnum.PRIVATE);
@@ -93,7 +110,7 @@ public class MaintenanceManualServiceImpl
             knowledgeDocumentService.removeById(doc.getId());
         }
 
-        // 兼容：删除旧字段指向的 MinIO 文件
+        // 兼容旧数据：删除旧字段指向的 MinIO 文件
         if (StringUtils.hasText(manual.getMinioObjectName())) {
             try {
                 mioIOUpLoadService.delete(manual.getMinioObjectName(), BucketEnum.PRIVATE);
@@ -111,7 +128,7 @@ public class MaintenanceManualServiceImpl
     @Transactional
     public MaintenanceManual update(MaintenanceManualDTO maintenanceManualDTO, MultipartFile file) {
         if (maintenanceManualDTO.getId() == null) {
-            throw new NullException("Maintenance manual id cannot be empty");
+            throw new NullException("手册 ID 不能为空");
         }
 
         MaintenanceManual manual = getManualById(maintenanceManualDTO.getId());
@@ -147,16 +164,18 @@ public class MaintenanceManualServiceImpl
     @Override
     public MaintenanceManual getManualById(Long id) {
         if (id == null) {
-            throw new NullException("Maintenance manual id cannot be empty");
+            throw new NullException("手册 ID 不能为空");
         }
         String cacheKey = RedisKey.MANUAL_DETAIL + id;
 
+        // 缓存命中时直接返回；命中空值标记则抛出不存在异常
         Object cachedValue = redisTemplate.opsForValue().get(cacheKey);
         MaintenanceManual cachedManual = parseManualCache(cachedValue);
         if (cachedManual != null) {
             return cachedManual;
         }
 
+        // 分布式锁保护缓存重建，防止击穿
         RLock lock = redissonClient.getLock(RedisKey.MANUAL_DETAIL_LOCK + id);
         boolean locked = false;
         try {
@@ -177,7 +196,7 @@ public class MaintenanceManualServiceImpl
             return loadManualToCache(id, cacheKey);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Get maintenance manual cache lock interrupted", e);
+            throw new RuntimeException("获取手册缓存锁被中断", e);
         } finally {
             if (locked && lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -251,6 +270,7 @@ public class MaintenanceManualServiceImpl
 
     // ===== 缓存逻辑 =====
 
+    /** 解析 Redis 中的详情缓存值。 */
     private MaintenanceManual parseManualCache(Object cachedValue) {
         if (cachedValue == null) return null;
         if (EMPTY_CACHE_VALUE.equals(cachedValue)) {
@@ -261,24 +281,30 @@ public class MaintenanceManualServiceImpl
         return null;
     }
 
+    /** 从数据库加载手册并回填缓存。 */
     private MaintenanceManual loadManualToCache(Long id, String cacheKey) {
         MaintenanceManual manual = getById(id);
         if (manual == null) {
+            // 不存在的手册写入短期空值缓存，防穿透
             redisTemplate.opsForValue().set(cacheKey, EMPTY_CACHE_VALUE, emptyCacheTtl());
             throw new NotFoundException(MANUAL_NOT_FOUND);
         }
+        // 正常缓存加随机 TTL 防雪崩
         redisTemplate.opsForValue().set(cacheKey, manual, manualCacheTtl());
         return manual;
     }
 
+    /** 删除指定手册的详情缓存。 */
     private void evictManualCache(Long id) {
         redisTemplate.delete(RedisKey.MANUAL_DETAIL + id);
     }
 
+    /** 正常详情缓存 TTL：30-40 分钟随机，防雪崩。 */
     private Duration manualCacheTtl() {
         return Duration.ofMinutes(30 + ThreadLocalRandom.current().nextInt(11));
     }
 
+    /** 空值缓存 TTL：60-180 秒随机，兼顾防穿透和新数据可见性。 */
     private Duration emptyCacheTtl() {
         return Duration.ofSeconds(60 + ThreadLocalRandom.current().nextInt(121));
     }

@@ -18,6 +18,8 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +30,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -35,6 +38,12 @@ import java.util.Objects;
 public class KnowledgeDocumentServiceImpl
         extends ServiceImpl<KnowledgeDocumentMapper, KnowledgeDocument>
         implements KnowledgeDocumentService {
+
+    /** 文件大小上限：50MB */
+    private static final long MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+    /** 版本号分配锁前缀，按 manualId 加锁保证串行 */
+    private static final String VERSION_LOCK_PREFIX = "knowledge:version:lock:";
 
     private static final List<String> FILE_EXTENSIONS = List.of(".pdf", ".doc", ".docx");
     private static final List<String> FILE_CONTENT_TYPES = List.of(
@@ -48,6 +57,7 @@ public class KnowledgeDocumentServiceImpl
     private final MioIOUpLoadService mioIOUpLoadService;
     private final KnowledgeImportProducer knowledgeImportProducer;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final RedissonClient redissonClient;
 
     @Override
     @Transactional
@@ -61,7 +71,33 @@ public class KnowledgeDocumentServiceImpl
         // 2. 校验文件
         validateFile(file);
 
-        // 3. 计算版本号: 当前最大版本号 + 1
+        // 3. 分布式锁保证同一手册版本号串行分配，防止并发上传产生重复版本号
+        RLock versionLock = redissonClient.getLock(VERSION_LOCK_PREFIX + manualId);
+        boolean locked = false;
+        try {
+            locked = versionLock.tryLock(5, 30, TimeUnit.SECONDS);
+            if (!locked) {
+                throw new RuntimeException("获取版本号锁超时，请稍后重试");
+            }
+            return doUploadNewVersion(manual, file);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("获取版本号锁被中断", e);
+        } finally {
+            if (locked && versionLock.isHeldByCurrentThread()) {
+                versionLock.unlock();
+            }
+        }
+    }
+
+    /**
+     * 在持有版本号锁的情况下执行上传逻辑。
+     * 锁内完成：查最大版本号 → 插入新记录 → 发 MQ 消息。
+     */
+    private KnowledgeDocument doUploadNewVersion(MaintenanceManual manual, MultipartFile file) {
+        Long manualId = manual.getId();
+
+        // 计算版本号：当前最大版本号 + 1
         Integer maxVersion = baseMapper.selectObjs(
                 new LambdaQueryWrapper<KnowledgeDocument>()
                         .select(KnowledgeDocument::getVersion)
@@ -71,10 +107,19 @@ public class KnowledgeDocumentServiceImpl
         ).stream().findFirst().map(o -> (Integer) o).orElse(0);
         int newVersion = maxVersion + 1;
 
-        // 4. 上传文件到 MinIO 私有桶
+        // 查找当前 active 版本的 documentId，用于通知 Python 删除旧向量
+        String oldDocumentId = null;
+        if (manual.getActiveDocumentId() != null) {
+            KnowledgeDocument activeDoc = getById(manual.getActiveDocumentId());
+            if (activeDoc != null) {
+                oldDocumentId = activeDoc.getDocumentId();
+            }
+        }
+
+        // 上传文件到 MinIO 私有桶
         String objectName = mioIOUpLoadService.getObjectName(file, BucketEnum.PRIVATE.getName());
 
-        // 5. 创建 knowledge_document 记录
+        // 创建 knowledge_document 记录
         Long docId = IdWorker.getId();
         String documentId = "kdoc_" + docId;
 
@@ -97,16 +142,16 @@ public class KnowledgeDocumentServiceImpl
         doc.setUpdatedAt(now);
         save(doc);
 
-        // 6. 更新手册状态为"处理中"
+        // 更新手册状态为"处理中"
         manual.setStatus(2);
         manual.setUpdatedAt(now);
         manualMapper.updateById(manual);
         evictManualCache(manualId);
 
-        // 7. 生成文件预签名 URL 给 Python 下载
+        // 生成文件预签名 URL 给 Python 下载
         String fileUrl = mioIOUpLoadService.getPresignedUrl(objectName, BucketEnum.PRIVATE, 120);
 
-        // 8. 发送 MQ 消息
+        // 发送 MQ 消息，携带旧版本 documentId 用于 Python 端先删旧向量
         knowledgeImportProducer.sendImportTask(
                 documentId,
                 fileUrl,
@@ -116,10 +161,11 @@ public class KnowledgeDocumentServiceImpl
                 "v" + newVersion,
                 null,
                 null,
-                true
+                oldDocumentId
         );
 
-        log.info("上传新版本: manualId={}, version={}, documentId={}", manualId, newVersion, documentId);
+        log.info("上传新版本: manualId={}, version={}, documentId={}, oldDocumentId={}",
+                manualId, newVersion, documentId, oldDocumentId);
         return doc;
     }
 
@@ -128,7 +174,7 @@ public class KnowledgeDocumentServiceImpl
     public void onParseSuccess(String documentId, Map<String, Object> data) {
         KnowledgeDocument doc = getByDocumentId(documentId);
 
-        // 更新 knowledge_document
+        // 更新 knowledge_document 状态和统计
         doc.setStatus("ready");
         doc.setTextCount(toInt(data.get("text_count")));
         doc.setImageCount(toInt(data.get("image_count")));
@@ -210,6 +256,9 @@ public class KnowledgeDocumentServiceImpl
     private void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new NullException("文件不能为空");
+        }
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new FormatErrorException("文件大小不能超过 50MB");
         }
         String fileSuffix = getFileSuffix(file).toLowerCase(Locale.ROOT);
         String contentType = file.getContentType();
