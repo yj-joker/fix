@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neo4j 图片向量跨模态检索 - 架构流程图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; padding: 30px; }
+  h1 { text-align: center; color: #58a6ff; font-size: 28px; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #8b949e; font-size: 14px; margin-bottom: 40px; }
+
+  /* ===== 导航 ===== */
+  .nav { display: flex; justify-content: center; gap: 12px; margin-bottom: 36px; flex-wrap: wrap; }
+  .nav a { padding: 8px 18px; background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+           color: #58a6ff; text-decoration: none; font-size: 14px; transition: all .2s; }
+  .nav a:hover, .nav a.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+
+  /* ===== 章节 ===== */
+  .section { max-width: 1100px; margin: 0 auto 50px; }
+  .section-title { font-size: 22px; color: #58a6ff; border-bottom: 2px solid #1f6feb;
+                   padding-bottom: 10px; margin-bottom: 24px; }
+
+  /* ===== 流程图容器 ===== */
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .flow-row { display: flex; align-items: center; justify-content: center; gap: 16px; width: 100%; }
+
+  /* 节点 */
+  .node { padding: 14px 22px; border-radius: 10px; text-align: center; min-width: 180px;
+          font-size: 14px; line-height: 1.6; position: relative; }
+  .node-java   { background: #1a2740; border: 2px solid #2f81f7; color: #79c0ff; }
+  .node-python { background: #1a2e1a; border: 2px solid #3fb950; color: #7ee787; }
+  .node-neo4j  { background: #2a1a2e; border: 2px solid #bc8cff; color: #d2a8ff; }
+  .node-minio  { background: #2a2210; border: 2px solid #d29922; color: #e3b341; }
+  .node-user   { background: #261c10; border: 2px solid #db6d28; color: #f0883e; }
+  .node-api    { background: #162030; border: 2px solid #388bfd; color: #79c0ff; }
+  .node-decision { background: #1c1c28; border: 2px dashed #8b949e; color: #c9d1d9;
+                   border-radius: 50%; width: 60px; height: 60px; min-width: 60px;
+                   display: flex; align-items: center; justify-content: center; padding: 0; font-size: 13px; }
+
+  .node small { display: block; color: #8b949e; font-size: 12px; margin-top: 4px; }
+  .node .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+                 margin-top: 4px; font-weight: 600; }
+  .badge-java   { background: #0d2240; color: #58a6ff; }
+  .badge-python { background: #0d2210; color: #3fb950; }
+  .badge-neo4j  { background: #1a0d28; color: #bc8cff; }
+
+  /* 箭头 */
+  .arrow { display: flex; flex-direction: column; align-items: center; padding: 4px 0; color: #484f58; }
+  .arrow .line { width: 2px; height: 28px; background: #30363d; }
+  .arrow .line-h { width: 40px; height: 2px; background: #30363d; }
+  .arrow .tip { font-size: 16px; color: #484f58; }
+  .arrow .label { font-size: 11px; color: #8b949e; white-space: nowrap; }
+  .arrow-h { flex-direction: row; padding: 0 4px; }
+
+  /* 并排容器 */
+  .parallel { display: flex; gap: 30px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+  .parallel-col { display: flex; flex-direction: column; align-items: center; gap: 0; }
+
+  /* ===== 文件清单 ===== */
+  .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .file-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
+  .file-card h4 { color: #58a6ff; font-size: 14px; margin-bottom: 6px; word-break: break-all; }
+  .file-card .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 6px; }
+  .tag-new    { background: #0d2210; color: #3fb950; }
+  .tag-modify { background: #2a2210; color: #d29922; }
+  .file-card p { font-size: 13px; color: #8b949e; margin-top: 6px; line-height: 1.5; }
+
+  /* ===== 方法说明表 ===== */
+  .method-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  .method-table th { background: #161b22; color: #58a6ff; padding: 10px 14px; text-align: left;
+                     font-size: 13px; border-bottom: 2px solid #30363d; }
+  .method-table td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: top; }
+  .method-table tr:hover td { background: #161b2288; }
+  .method-table code { background: #1c2333; padding: 2px 6px; border-radius: 4px; color: #79c0ff; font-size: 12px; }
+
+  /* ===== 数据流表 ===== */
+  .data-flow { display: flex; align-items: center; justify-content: center; gap: 0; flex-wrap: wrap; margin: 20px 0; }
+  .df-box { padding: 10px 16px; border-radius: 8px; font-size: 13px; text-align: center; white-space: nowrap; }
+  .df-arrow { padding: 0 6px; color: #484f58; font-size: 18px; }
+
+  /* ===== 向量空间说明 ===== */
+  .vector-info { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
+  .vector-card { flex: 1; min-width: 280px; background: #161b22; border: 1px solid #30363d;
+                 border-radius: 10px; padding: 18px; }
+  .vector-card h4 { font-size: 15px; margin-bottom: 10px; }
+  .vector-card ul { list-style: none; padding: 0; }
+  .vector-card li { padding: 4px 0; font-size: 13px; color: #8b949e; }
+  .vector-card li::before { content: "•"; color: #58a6ff; margin-right: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Neo4j 图片向量跨模态检索</h1>
+<p class="subtitle">Java Spring Boot + Python FastAPI + MinIO + Neo4j Vector Index + 阿里云百炼 multimodal-embedding-v1</p>
+
+<div class="nav">
+  <a href="#overview" class="active">整体架构</a>
+  <a href="#upload">图片上传 &amp; 向量化</a>
+  <a href="#search-image">图片检索路径</a>
+  <a href="#search-text">文字检索图片</a>
+  <a href="#vector-space">向量空间</a>
+  <a href="#files">文件清单</a>
+  <a href="#methods">方法说明</a>
+</div>
+
+<!-- ==================== 1. 整体架构 ==================== -->
+<div class="section" id="overview">
+  <h2 class="section-title">一、整体架构</h2>
+
+  <div class="flow">
+    <div class="node node-user" style="min-width:300px;">
+      <b>用户 / 前端</b><br>
+      上传图片 · 文字搜图 · 拍照识别故障
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">REST API</div></div>
+
+    <div class="node node-java" style="min-width:500px;">
+      <b>Java Spring Boot 后端</b><br>
+      PathController · DeviceService · FaultService · ...<br>
+      <small>图片存 MinIO → 调 Python 拿向量 → 存入 Neo4j</small>
+      <div><span class="badge badge-java">消费者</span></div>
+    </div>
+
+    <div class="flow-row" style="margin-top: 16px;">
+      <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">imageUrls</div></div>
+      <div style="width: 200px;"></div>
+      <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">HTTP POST</div></div>
+    </div>
+
+    <div class="flow-row">
+      <div class="node node-minio">
+        <b>MinIO</b><br>
+        weixiu-public-tupian<br>
+        <small>图片对象存储</small>
+      </div>
+      <div style="width: 80px;"></div>
+      <div class="node node-python">
+        <b>Python FastAPI</b><br>
+        /ai/embedding/image<br>
+        /ai/embedding/text-multimodal<br>
+        <small>multimodal-embedding-v1</small>
+        <div><span class="badge badge-python">向量能力提供者</span></div>
+      </div>
+    </div>
+
+    <div class="flow-row" style="margin-top: 16px;">
+      <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">URL 列表</div></div>
+      <div style="width: 200px;"></div>
+      <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">向量数组</div></div>
+    </div>
+
+    <div class="node node-java" style="min-width:420px;">
+      <b>ImageEmbeddingUtils</b><br>
+      多图向量取平均值 → List&lt;Double&gt; imageEmbedding
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">save / update</div></div>
+
+    <div class="node node-neo4j" style="min-width:500px;">
+      <b>Neo4j 图数据库</b><br>
+      Device · Component · Fault · Solution · CaseRecord<br>
+      <small>每个节点: imageUrls (图片URL列表) + imageEmbedding (1024维向量)</small><br>
+      <small>5 个 VECTOR INDEX (cosine, 1024 dims)</small>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 2. 图片上传 & 向量化 ==================== -->
+<div class="section" id="upload">
+  <h2 class="section-title">二、图片上传 &amp; 向量化流程</h2>
+  <p style="color:#8b949e; margin-bottom:20px;">以创建故障为例：POST /weixiu/fault/save，请求体包含 imageUrls 字段</p>
+
+  <div class="flow">
+    <div class="node node-user">
+      <b>① 用户请求</b><br>
+      POST /weixiu/fault/save<br>
+      <small>{ name, description, severity, imageUrls: ["minio://..."] }</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div></div>
+
+    <div class="node node-java">
+      <b>② FaultController.save()</b><br>
+      接收 FaultDTO<br>
+      <small>imageUrls 通过 BeanUtils.copyProperties 复制到 Fault 实体</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div></div>
+
+    <div class="node node-java">
+      <b>③ FaultServiceImpl.save()</b><br>
+      生成 UUID · 文字向量化 (EmbeddingUtils)<br>
+      <small>检查 imageUrls 是否非空</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">imageUrls != null &amp;&amp; !isEmpty</div></div>
+
+    <div class="node node-java" style="border-color: #f0883e;">
+      <b>④ ImageEmbeddingUtils.getImageEmbedding()</b><br>
+      HTTP POST → Python /ai/embedding/image<br>
+      <small>body: { "image_urls": ["url1", "url2", ...] }</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">WebClient POST</div></div>
+
+    <div class="node node-python">
+      <b>⑤ Python: embedding_image()</b><br>
+      ImageEmbedding.embed_batch(image_urls)<br>
+      <small>调用阿里云百炼 multimodal-embedding-v1</small><br>
+      <small>返回: { vectors: [[...], [...]], dimension: 1024 }</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">vectors JSON</div></div>
+
+    <div class="node node-java" style="border-color: #f0883e;">
+      <b>⑥ ImageEmbeddingUtils: 计算平均向量</b><br>
+      N张图片 × 1024维 → 逐维求和 ÷ N → 1个1024维平均向量<br>
+      <small>avgVector[d] = Σ vectors[v][d] / vectorCount</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">fault.setImageEmbedding(avgVector)</div></div>
+
+    <div class="node node-neo4j">
+      <b>⑦ Neo4j: 保存节点</b><br>
+      faultRepository.save(fault)<br>
+      <small>节点属性: image_urls=[...], image_embedding=[...1024维...]</small>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 3. 图片检索路径 ==================== -->
+<div class="section" id="search-image">
+  <h2 class="section-title">三、图片 → 检索诊断路径</h2>
+  <p style="color:#8b949e; margin-bottom:20px;">用户上传故障现场照片 → 检索最相似的故障 → 返回完整诊断路径</p>
+
+  <div class="flow">
+    <div class="node node-user">
+      <b>① 用户上传故障照片</b><br>
+      POST /weixiu/path/image-search<br>
+      <small>{ imageUrls: ["minio://fault-photo.jpg"], limit: 10, minScore: 0.5 }</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div></div>
+
+    <div class="node node-java">
+      <b>② PathController.searchByImage()</b><br>
+      接收 ImageSearchQuery<br>
+      <small>→ graphQueryService.findDiagnosisPathsByImage(query)</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div></div>
+
+    <div class="node node-java" style="border-color: #f0883e;">
+      <b>③ GraphQueryServiceImpl.findDiagnosisPathsByImage()</b><br>
+      调 ImageEmbeddingUtils 拿图片向量
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">HTTP → Python</div></div>
+
+    <div class="node node-python">
+      <b>④ Python: 图片 → 1024维向量</b><br>
+      multimodal-embedding-v1
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">平均向量返回 Java</div></div>
+
+    <div class="node node-neo4j" style="min-width: 550px;">
+      <b>⑤ Neo4j: 向量相似度检索 + 图谱路径扩展</b><br><br>
+      <code style="background:#1c2333;padding:6px 10px;border-radius:6px;font-size:12px;display:block;text-align:left;color:#c9d1d9;line-height:1.8;">
+        CALL db.index.vector.queryNodes('fault_image_index', $limit, $vector)<br>
+        YIELD node AS f, score<br>
+        WHERE score >= $minScore<br>
+        OPTIONAL MATCH (c:Component)-[:CAUSES]->(f)<br>
+        OPTIONAL MATCH (f)-[:HAS_SOLUTION]->(s:Solution)<br>
+        OPTIONAL MATCH (d:Device)-[:OWNS]->(c)
+      </code>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div></div>
+
+    <div class="node node-java" style="min-width: 500px;">
+      <b>⑥ 组装 DiagnosisPathVO 列表</b><br>
+      设备名 → 部件名 → 故障名 → 解决方案<br>
+      <small>附带: score(相似度), faultImageUrls, pathText</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div></div>
+
+    <div class="node node-user" style="min-width: 500px;">
+      <b>⑦ 返回结果</b><br>
+      PageResult&lt;DiagnosisPathVO&gt;<br>
+      <small>包含：设备 → 部件 → 故障(含图片) → 解决方案(含预计时间、是否验证)</small>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 4. 文字检索图片 ==================== -->
+<div class="section" id="search-text">
+  <h2 class="section-title">四、文字 → 检索图片（跨模态）</h2>
+  <p style="color:#8b949e; margin-bottom:20px;">Agent RAG 场景：用户描述故障 → 文字转为跨模态向量 → 在同一向量空间中检索相似图片</p>
+
+  <div class="flow">
+    <div class="node node-user">
+      <b>① 用户描述</b><br>
+      "电机轴承磨损，表面有磨损痕迹"
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div></div>
+
+    <div class="node node-python">
+      <b>② Python: /ai/embedding/text-multimodal</b><br>
+      用 multimodal-embedding-v1 将文字转向量<br>
+      <small>input: [{"text": "电机轴承磨损..."}]</small><br>
+      <small>返回: { vector: [...1024维...], dimension: 1024 }</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div><div class="label">跨模态向量（与图片同一空间）</div></div>
+
+    <div class="node node-neo4j" style="min-width: 450px;">
+      <b>③ Neo4j: 向量检索</b><br>
+      <code style="background:#1c2333;padding:4px 8px;border-radius:4px;font-size:12px;color:#c9d1d9;">
+        db.index.vector.queryNodes('fault_image_index', $limit, $vector)
+      </code><br>
+      <small>文字向量 vs 图片向量 → 余弦相似度排序</small>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="tip">▼</div></div>
+
+    <div class="node node-python" style="min-width: 450px;">
+      <b>④ 返回匹配结果</b><br>
+      故障名称 + 图片URL列表 + 相似度分数<br>
+      <small>→ Agent 可将图片展示给用户辅助诊断</small>
+    </div>
+  </div>
+
+  <div style="margin-top:30px; background:#161b22; border:1px solid #30363d; border-radius:10px; padding:20px;">
+    <h4 style="color:#d29922; margin-bottom:12px;">💡 跨模态原理</h4>
+    <div class="data-flow">
+      <div class="df-box node-user">故障照片</div>
+      <div class="df-arrow">→</div>
+      <div class="df-box node-python">multimodal-embedding-v1</div>
+      <div class="df-arrow">→</div>
+      <div class="df-box node-neo4j" style="border:2px solid #bc8cff;">1024维向量 A</div>
+    </div>
+    <div class="data-flow">
+      <div class="df-box node-user">"轴承磨损"</div>
+      <div class="df-arrow">→</div>
+      <div class="df-box node-python">multimodal-embedding-v1</div>
+      <div class="df-arrow">→</div>
+      <div class="df-box node-neo4j" style="border:2px solid #bc8cff;">1024维向量 B</div>
+    </div>
+    <p style="text-align:center; color:#8b949e; margin-top:12px; font-size:13px;">
+      向量 A 和向量 B 在<b style="color:#d2a8ff;">同一向量空间</b>中，可以计算余弦相似度<br>
+      cosine(A, B) 越大 → 图片内容与文字描述越相关
+    </p>
+  </div>
+</div>
+
+<!-- ==================== 5. 向量空间 ==================== -->
+<div class="section" id="vector-space">
+  <h2 class="section-title">五、两套向量空间（互不干扰）</h2>
+
+  <div class="vector-info">
+    <div class="vector-card" style="border-left: 4px solid #58a6ff;">
+      <h4 style="color:#58a6ff;">embedding（纯文字检索）</h4>
+      <ul>
+        <li>模型: <b>text-embedding-v4</b></li>
+        <li>用途: 用户输入文字 → 检索相似故障/部件</li>
+        <li>字段: <code>embedding</code> (Component, Fault)</li>
+        <li>索引: fault_embedding_index, component_embedding_index</li>
+        <li>调用方: Java EmbeddingUtils 直接调阿里云</li>
+        <li>场景: "轴承过热" → 搜索文字描述相似的故障</li>
+      </ul>
+    </div>
+    <div class="vector-card" style="border-left: 4px solid #3fb950;">
+      <h4 style="color:#3fb950;">imageEmbedding（跨模态检索）</h4>
+      <ul>
+        <li>模型: <b>multimodal-embedding-v1</b></li>
+        <li>用途: 图片↔文字 跨模态检索</li>
+        <li>字段: <code>imageEmbedding</code> (全部5种实体)</li>
+        <li>索引: *_image_index (5个)</li>
+        <li>调用方: Java → Python /ai/embedding/image</li>
+        <li>场景: 拍照 → 搜索视觉相似的故障图片</li>
+      </ul>
+    </div>
+  </div>
+
+  <div style="margin-top:24px; background:#161b22; border:1px solid #30363d; border-radius:10px; padding:20px;">
+    <h4 style="color:#f0883e; margin-bottom:12px;">⚠️ 为什么不能混用？</h4>
+    <p style="font-size:13px; color:#8b949e; line-height:1.8;">
+      <b>text-embedding-v4</b> 生成的向量只能与 text-embedding-v4 的向量比较（纯文字空间）。<br>
+      <b>multimodal-embedding-v1</b> 生成的向量（无论输入是图片还是文字）在同一个跨模态空间中。<br>
+      两个模型的向量维度可能相同，但语义空间完全不同，跨模型比较无意义。
+    </p>
+  </div>
+</div>
+
+<!-- ==================== 6. 文件清单 ==================== -->
+<div class="section" id="files">
+  <h2 class="section-title">六、改动文件清单</h2>
+
+  <h3 style="color:#3fb950; margin: 16px 0 12px;">Python 端 (D:\py\daima\FixAgent)</h3>
+  <div class="file-grid">
+    <div class="file-card">
+      <h4>api/main.py</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>新增 <code>/ai/embedding/image</code> 图片批量向量化接口<br>
+         新增 <code>/ai/embedding/text-multimodal</code> 文字跨模态向量化接口</p>
+    </div>
+    <div class="file-card">
+      <h4>services/graph_service.py</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>新增 <code>search_by_image_vector()</code> 通用图片向量检索<br>
+         新增 <code>query_diagnosis_by_image_vector()</code> 图片→诊断路径</p>
+    </div>
+    <div class="file-card">
+      <h4>tools/graph_query_tool.py</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>新增 <code>GraphImageSearchTool</code> 供 Agent RAG 调用</p>
+    </div>
+  </div>
+
+  <h3 style="color:#58a6ff; margin: 24px 0 12px;">Java 端 (ai.weixiu)</h3>
+  <div class="file-grid">
+    <div class="file-card">
+      <h4>entity/ (5个文件)</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>Device, Component, Fault, Solution, CaseRecord<br>
+         各添加 <code>imageUrls</code> + <code>imageEmbedding</code> 字段</p>
+    </div>
+    <div class="file-card">
+      <h4>pojo/dto/ (5个) + pojo/vo/ (5个)</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>DTO 和 VO 各添加 <code>imageUrls</code><br>
+         DiagnosisPathVO 添加 <code>faultImageUrls</code> / <code>componentImageUrls</code></p>
+    </div>
+    <div class="file-card">
+      <h4>utils/ImageEmbeddingUtils.java</h4>
+      <span class="tag tag-new">新建</span>
+      <p>调 Python <code>/ai/embedding/image</code> 拿向量<br>
+         多图向量取平均值，30秒超时</p>
+    </div>
+    <div class="file-card">
+      <h4>service/impl/ (5个 ServiceImpl)</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>注入 ImageEmbeddingUtils<br>
+         save/update 时自动生成 imageEmbedding</p>
+    </div>
+    <div class="file-card">
+      <h4>repository/ (Fault + Component)</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>新增 <code>getFaultsByImageEmbedding()</code><br>
+         新增 <code>getComponentByImageEmbedding()</code></p>
+    </div>
+    <div class="file-card">
+      <h4>pojo/query/ImageSearchQuery.java</h4>
+      <span class="tag tag-new">新建</span>
+      <p>图片检索请求参数：imageUrls, limit, minScore</p>
+    </div>
+    <div class="file-card">
+      <h4>service/GraphQueryService[Impl]</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>接口 + 实现新增 <code>findDiagnosisPathsByImage()</code></p>
+    </div>
+    <div class="file-card">
+      <h4>controller/PathController.java</h4>
+      <span class="tag tag-modify">修改</span>
+      <p>新增 <code>POST /weixiu/path/image-search</code></p>
+    </div>
+  </div>
+
+  <h3 style="color:#bc8cff; margin: 24px 0 12px;">Neo4j</h3>
+  <div class="file-grid">
+    <div class="file-card">
+      <h4>docs/neo4j-image-vector-indexes.cypher</h4>
+      <span class="tag tag-new">新建</span>
+      <p>5 个 CREATE VECTOR INDEX 语句<br>
+         device/component/fault/solution/case_record_image_index<br>
+         1024维, cosine 相似度</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 7. 方法说明 ==================== -->
+<div class="section" id="methods">
+  <h2 class="section-title">七、核心方法说明</h2>
+
+  <h3 style="color:#3fb950; margin: 16px 0 12px;">Python 端</h3>
+  <table class="method-table">
+    <tr><th>方法 / 接口</th><th>位置</th><th>说明</th></tr>
+    <tr>
+      <td><code>POST /ai/embedding/image</code></td>
+      <td>api/main.py</td>
+      <td>接收图片URL列表，调 multimodal-embedding-v1 返回每张图的1024维向量</td>
+    </tr>
+    <tr>
+      <td><code>POST /ai/embedding/text-multimodal</code></td>
+      <td>api/main.py</td>
+      <td>接收文字，用同一模型转为跨模态向量（与图片在同一空间）</td>
+    </tr>
+    <tr>
+      <td><code>search_by_image_vector()</code></td>
+      <td>services/graph_service.py</td>
+      <td>通用方法：在指定实体类型的 image_index 中做向量检索</td>
+    </tr>
+    <tr>
+      <td><code>query_diagnosis_by_image_vector()</code></td>
+      <td>services/graph_service.py</td>
+      <td>在 fault_image_index 检索 → OPTIONAL MATCH 扩展到 Component + Solution</td>
+    </tr>
+    <tr>
+      <td><code>GraphImageSearchTool._execute()</code></td>
+      <td>tools/graph_query_tool.py</td>
+      <td>Agent RAG 工具：图片→向量→平均→图谱检索→格式化返回</td>
+    </tr>
+  </table>
+
+  <h3 style="color:#58a6ff; margin: 24px 0 12px;">Java 端</h3>
+  <table class="method-table">
+    <tr><th>方法</th><th>位置</th><th>说明</th></tr>
+    <tr>
+      <td><code>getImageEmbedding(List&lt;String&gt;)</code></td>
+      <td>ImageEmbeddingUtils</td>
+      <td>调 Python /ai/embedding/image，拿到多图向量后逐维求平均，返回 List&lt;Double&gt;</td>
+    </tr>
+    <tr>
+      <td><code>save() / update()</code></td>
+      <td>5个 ServiceImpl</td>
+      <td>若 imageUrls 非空，调 ImageEmbeddingUtils 生成 imageEmbedding 后存入 Neo4j</td>
+    </tr>
+    <tr>
+      <td><code>getFaultsByImageEmbedding()</code></td>
+      <td>FaultRepository</td>
+      <td>@Query 注解，调 db.index.vector.queryNodes('fault_image_index', ...)</td>
+    </tr>
+    <tr>
+      <td><code>getComponentByImageEmbedding()</code></td>
+      <td>ComponentRepository</td>
+      <td>@Query 注解，调 db.index.vector.queryNodes('component_image_index', ...)</td>
+    </tr>
+    <tr>
+      <td><code>findDiagnosisPathsByImage()</code></td>
+      <td>GraphQueryServiceImpl</td>
+      <td>核心方法：图片→向量→fault_image_index检索→图谱路径扩展→DiagnosisPathVO</td>
+    </tr>
+    <tr>
+      <td><code>searchByImage()</code></td>
+      <td>PathController</td>
+      <td>POST /weixiu/path/image-search 入口，转发给 GraphQueryService</td>
+    </tr>
+  </table>
+</div>
+
+<div style="text-align:center; color:#484f58; margin-top:40px; padding-bottom:30px; font-size:12px;">
+  Generated for FixAgent · Neo4j Image Vector Cross-Modal Search · 2026-05-19
+</div>
+
+</body>
+</html>

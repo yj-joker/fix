@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent 记忆架构文档</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #94a3b8;
+            margin-bottom: 50px;
+            font-size: 1.1rem;
+        }
+
+        /* Section styles */
+        .section {
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid #334155;
+        }
+        .section h2 {
+            font-size: 1.5rem;
+            color: #60a5fa;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .section h2 .icon { font-size: 1.8rem; }
+        .section h3 {
+            font-size: 1.1rem;
+            color: #a78bfa;
+            margin: 15px 0 10px;
+        }
+
+        /* Architecture diagram */
+        .arch-diagram {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .arch-box {
+            background: #0f172a;
+            border-radius: 12px;
+            padding: 20px;
+            border: 2px solid;
+            position: relative;
+        }
+        .arch-box.window { border-color: #22d3ee; }
+        .arch-box.fact { border-color: #a78bfa; }
+        .arch-box.preference { border-color: #f472b6; }
+        .arch-box .box-title {
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+        .arch-box.window .box-title { color: #22d3ee; }
+        .arch-box.fact .box-title { color: #a78bfa; }
+        .arch-box.preference .box-title { color: #f472b6; }
+        .arch-box .box-desc {
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+        .arch-box .box-storage {
+            margin-top: 10px;
+            padding: 6px 10px;
+            background: #1e293b;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: #67e8f9;
+        }
+
+        /* Flow diagram */
+        .flow-container {
+            position: relative;
+            padding: 20px 0;
+        }
+        .flow-step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 8px;
+            position: relative;
+        }
+        .flow-step::before {
+            content: '';
+            position: absolute;
+            left: 18px;
+            top: 36px;
+            bottom: -8px;
+            width: 2px;
+            background: #334155;
+        }
+        .flow-step:last-child::before { display: none; }
+        .flow-number {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+            margin-right: 15px;
+            position: relative;
+            z-index: 1;
+        }
+        .flow-number.java { background: #1e40af; color: #93c5fd; }
+        .flow-number.python { background: #065f46; color: #6ee7b7; }
+        .flow-number.redis { background: #7c2d12; color: #fdba74; }
+        .flow-number.llm { background: #581c87; color: #d8b4fe; }
+        .flow-content {
+            flex: 1;
+            background: #0f172a;
+            border-radius: 10px;
+            padding: 12px 16px;
+            border: 1px solid #334155;
+        }
+        .flow-content .flow-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+        .flow-content .flow-desc {
+            font-size: 0.82rem;
+            color: #94a3b8;
+        }
+        .flow-content code {
+            background: #1e293b;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.78rem;
+            color: #fbbf24;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+        }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .legend-dot.java { background: #1e40af; }
+        .legend-dot.python { background: #065f46; }
+        .legend-dot.redis { background: #7c2d12; }
+        .legend-dot.llm { background: #581c87; }
+
+        /* Table styles */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+            font-size: 0.85rem;
+        }
+        th {
+            background: #0f172a;
+            color: #60a5fa;
+            font-weight: 600;
+        }
+        td { color: #cbd5e1; }
+        tr:hover td { background: #1a2332; }
+
+        /* Code block */
+        .code-block {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Fira Code', 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            overflow-x: auto;
+            margin: 10px 0;
+            color: #e2e8f0;
+            white-space: pre;
+            line-height: 1.5;
+        }
+        .code-block .comment { color: #6b7280; }
+        .code-block .keyword { color: #c084fc; }
+        .code-block .string { color: #34d399; }
+        .code-block .func { color: #60a5fa; }
+
+        /* Retry diagram */
+        .retry-flow {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        .retry-box {
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+        .retry-box.trigger { background: #1e40af; color: #93c5fd; }
+        .retry-box.py-retry { background: #065f46; color: #6ee7b7; }
+        .retry-box.java-retry { background: #7c2d12; color: #fdba74; }
+        .retry-box.fallback { background: #581c87; color: #d8b4fe; }
+        .retry-arrow {
+            color: #475569;
+            font-size: 1.2rem;
+        }
+
+        /* Tag */
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .tag.mysql { background: #1e3a5f; color: #7dd3fc; }
+        .tag.redis { background: #431407; color: #fdba74; }
+        .tag.python { background: #052e16; color: #86efac; }
+        .tag.java { background: #1e1b4b; color: #a5b4fc; }
+
+        /* Info box */
+        .info-box {
+            background: #172554;
+            border: 1px solid #1d4ed8;
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin: 12px 0;
+            font-size: 0.85rem;
+        }
+        .info-box.warn {
+            background: #422006;
+            border-color: #d97706;
+        }
+        .info-box.success {
+            background: #052e16;
+            border-color: #16a34a;
+        }
+
+        /* Context assembly */
+        .context-parts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 15px 0;
+        }
+        .context-part {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 12px;
+            border-left: 3px solid;
+        }
+        .context-part:nth-child(1) { border-color: #22d3ee; }
+        .context-part:nth-child(2) { border-color: #a78bfa; }
+        .context-part:nth-child(3) { border-color: #f472b6; }
+        .context-part:nth-child(4) { border-color: #fbbf24; }
+        .context-part:nth-child(5) { border-color: #34d399; }
+        .context-part:nth-child(6) { border-color: #fb7185; }
+        .context-part .part-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .context-part .part-desc {
+            font-size: 0.78rem;
+            color: #94a3b8;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .arch-diagram { grid-template-columns: 1fr; }
+            .context-parts { grid-template-columns: 1fr; }
+            h1 { font-size: 1.8rem; }
+        }
+
+        /* DB Schema */
+        .schema-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .schema-card {
+            background: #0f172a;
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid #334155;
+        }
+        .schema-card .card-title {
+            font-weight: 700;
+            color: #fbbf24;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        .schema-card .field {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.78rem;
+            padding: 3px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+        .schema-card .field:last-child { border-bottom: none; }
+        .schema-card .field-name { color: #67e8f9; }
+        .schema-card .field-type { color: #6b7280; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Agent 记忆系统架构</h1>
+        <p class="subtitle">设备维修管理平台 - 三层记忆 + 向量检索 + 渐进式摘要</p>
+
+        <!-- ========== 1. 架构总览 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#128201;</span> 架构总览</h2>
+            <p style="color:#94a3b8; margin-bottom:20px;">
+                记忆系统由三层组成，各层职责清晰、互相配合，解决长对话中的上下文丢失问题。
+            </p>
+            <div class="arch-diagram">
+                <div class="arch-box window">
+                    <div class="box-title">&#128196; 窗口记忆</div>
+                    <div class="box-desc">
+                        最近 N 轮对话的原始消息。<br>
+                        提供即时上下文，AI直接读取。<br>
+                        达到阈值后触发整合。
+                    </div>
+                    <div class="box-storage">存储: MySQL ai_message 表</div>
+                </div>
+                <div class="arch-box fact">
+                    <div class="box-title">&#128218; 事实记忆</div>
+                    <div class="box-desc">
+                        原子化、自包含的事实片段。<br>
+                        向量化后存入 Redis Stack。<br>
+                        语义检索，跨会话持久。
+                    </div>
+                    <div class="box-storage">存储: MySQL + Redis Vector</div>
+                </div>
+                <div class="arch-box preference">
+                    <div class="box-title">&#127919; 偏好记忆</div>
+                    <div class="box-desc">
+                        用户交互偏好（风格/格式/习惯）。<br>
+                        区分 explicit / inferred 来源。<br>
+                        explicit 直接生效，inferred 仅参考。
+                    </div>
+                    <div class="box-storage">存储: MySQL memory_preference 表</div>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <strong>设计原则：</strong>事实记忆是索引，原始对话才是详情来源。通过 source_seq_range 字段可回溯原始消息，实现"记忆找回"。
+            </div>
+        </div>
+
+        <!-- ========== 2. 对话上下文组装 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#128295;</span> 对话上下文组装（每轮对话前）</h2>
+            <p style="color:#94a3b8; margin-bottom:15px;">
+                每次用户发消息时，Java端 <code>AiServiceImpl.finalAiContext()</code> 组装完整上下文发给LLM：
+            </p>
+            <div class="context-parts">
+                <div class="context-part">
+                    <div class="part-title">1. 渐进式摘要</div>
+                    <div class="part-desc">ai_session.summary - 之前所有对话的压缩概要</div>
+                </div>
+                <div class="context-part">
+                    <div class="part-title">2. 相关事实（向量检索）</div>
+                    <div class="part-desc">用当前消息向量匹配最相关的5条事实</div>
+                </div>
+                <div class="context-part">
+                    <div class="part-title">3. 用户偏好</div>
+                    <div class="part-desc">preference_category=0 的全局偏好</div>
+                </div>
+                <div class="context-part">
+                    <div class="part-title">4. 会话偏好</div>
+                    <div class="part-desc">preference_category=1 的当前会话偏好</div>
+                </div>
+                <div class="context-part">
+                    <div class="part-title">5. 窗口消息</div>
+                    <div class="part-desc">最近 maxMemory 轮原始对话（MySQL查询）</div>
+                </div>
+                <div class="context-part">
+                    <div class="part-title">6. 未完成事项</div>
+                    <div class="part-desc">进行中任务、未答复问题、用户待办</div>
+                </div>
+            </div>
+
+            <h3>向量检索流程</h3>
+            <div class="code-block"><span class="comment">// Java端 searchRelevantFacts()</span>
+<span class="keyword">用户消息</span> "上次设备X的故障码是什么？"
+    <span class="func">↓ HTTP POST</span> → Python /ai/memory/search_facts?query=...&top_k=5
+        <span class="func">↓</span> text-embedding-v4 向量化
+        <span class="func">↓</span> Redis FT.SEARCH KNN 余弦相似度
+        <span class="func">↓</span> 过滤 metadata.type="fact"
+    <span class="func">↓ 返回</span> top-5 最相关事实
+<span class="keyword">注入上下文</span> → "【相关历史记忆】设备X故障码E-4012，温度传感器异常..."</div>
+        </div>
+
+        <!-- ========== 3. 记忆整合流程 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#9881;</span> 记忆整合流程（窗口满时触发）</h2>
+
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot java"></div> Java (Spring Boot)</div>
+                <div class="legend-item"><div class="legend-dot python"></div> Python (FastAPI)</div>
+                <div class="legend-item"><div class="legend-dot redis"></div> Redis</div>
+                <div class="legend-item"><div class="legend-dot llm"></div> LLM (Qwen)</div>
+            </div>
+
+            <div class="flow-container">
+                <div class="flow-step">
+                    <div class="flow-number java">1</div>
+                    <div class="flow-content">
+                        <div class="flow-title">触发条件检测</div>
+                        <div class="flow-desc">当 <code>roundCount % maxMemory == 0</code> 时，异步触发 <code>AsyncUtils.integrationMemory()</code></div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number redis">2</div>
+                    <div class="flow-content">
+                        <div class="flow-title">获取分布式锁</div>
+                        <div class="flow-desc">Redis SETNX <code>memory:consolidate:lock:{sessionId}</code>，TTL=5分钟，防并发整合</div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number java">3</div>
+                    <div class="flow-content">
+                        <div class="flow-title">捞取待整合消息</div>
+                        <div class="flow-desc">查询所有 <code>consolidated=0</code> 的消息（不限轮次范围，确保之前失败的也能被重新整合）</div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number java">4</div>
+                    <div class="flow-content">
+                        <div class="flow-title">组装整合参数</div>
+                        <div class="flow-desc">包含：消息列表 + 已有偏好 + 已有待办(带id) + 上一轮摘要(previousSummary)</div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number python">5</div>
+                    <div class="flow-content">
+                        <div class="flow-title">Python端接收 POST /ai/memory/consolidate</div>
+                        <div class="flow-desc">解析请求，构建 system prompt + user message，调用 MemoryAgent</div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number llm">6</div>
+                    <div class="flow-content">
+                        <div class="flow-title">LLM Function Calling 循环</div>
+                        <div class="flow-desc">
+                            Qwen 分析对话，可能调用 <code>search_similar_facts</code> 工具检测事实冲突。<br>
+                            最终输出 JSON：new_facts / superseded_ids / updated_preferences / updated_unresolved / resolved_item_ids / brief_summary
+                        </div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number python">7</div>
+                    <div class="flow-content">
+                        <div class="flow-title">解析 + 向量入库</div>
+                        <div class="flow-desc">
+                            JSON解析为 MemorySummary（含类型检查 + 重试）。<br>
+                            new_facts 向量化后写入 Redis Stack（text-embedding-v4, 1024维, COSINE距离）
+                        </div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number java">8</div>
+                    <div class="flow-content">
+                        <div class="flow-title">保存整合结果到 MySQL</div>
+                        <div class="flow-desc">
+                            ① 保存 new_facts（带 user_id 支持跨会话）<br>
+                            ② 标记 superseded 旧事实<br>
+                            ③ 保存偏好（explicit覆盖更新 / inferred新增）<br>
+                            ④ 保存新待办<br>
+                            ⑤ 用ID精确标记已解决事项<br>
+                            ⑥ 更新渐进式摘要<br>
+                            ⑦ 标记消息 consolidated=1
+                        </div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number redis">9</div>
+                    <div class="flow-content">
+                        <div class="flow-title">释放锁 + 清除偏好缓存</div>
+                        <div class="flow-desc">删除分布式锁，删除偏好缓存键（下次查询会从DB重新加载）</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 4. 重试与容错 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#128260;</span> 重试与容错机制</h2>
+            <p style="color:#94a3b8; margin-bottom:15px;">
+                LLM（Qwen）偶尔返回垃圾数据（如纯数字），系统有三道防线：
+            </p>
+
+            <h3>防线一：Python端类型检查</h3>
+            <div class="code-block"><span class="comment"># _extract_json() 中</span>
+data = json.loads(cleaned)
+<span class="keyword">if not isinstance</span>(data, dict):
+    <span class="keyword">raise</span> ValueError(<span class="string">f"期望dict，实际为 {type(data).__name__}"</span>)
+<span class="comment"># 防止 json.loads 解析出 float/list 等非对象类型</span></div>
+
+            <h3>防线二：Python端自动重试</h3>
+            <div class="retry-flow">
+                <div class="retry-box trigger">LLM调用</div>
+                <div class="retry-arrow">&#8594;</div>
+                <div class="retry-box py-retry">解析失败？重试1次</div>
+                <div class="retry-arrow">&#8594;</div>
+                <div class="retry-box fallback">返回 error 状态</div>
+            </div>
+
+            <h3>防线三：Java端重试</h3>
+            <div class="retry-flow">
+                <div class="retry-box trigger">调用Python</div>
+                <div class="retry-arrow">&#8594;</div>
+                <div class="retry-box java-retry">失败？等3秒重试（最多2次）</div>
+                <div class="retry-arrow">&#8594;</div>
+                <div class="retry-box fallback">全失败？消息保持 consolidated=0</div>
+            </div>
+
+            <div class="info-box success">
+                <strong>兜底保障：</strong><code>getNeedIntegrationMemory()</code> 查询所有 consolidated=0 的消息，不限轮次范围。即使本次全部失败，下次触发整合时这些消息还会被重新捞出来。消息永远不会丢失。
+            </div>
+        </div>
+
+        <!-- ========== 5. 偏好提取策略 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#127919;</span> 偏好提取策略</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>类型</th>
+                        <th>sourceType</th>
+                        <th>判定标准</th>
+                        <th>存储策略</th>
+                        <th>示例</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>显式偏好</strong></td>
+                        <td><span class="tag java">explicit</span></td>
+                        <td>用户直接表达偏好意愿</td>
+                        <td>同类覆盖更新，立即生效</td>
+                        <td>"以后回复不要写注释"</td>
+                    </tr>
+                    <tr>
+                        <td><strong>推断偏好</strong></td>
+                        <td><span class="tag redis">inferred</span></td>
+                        <td>从行为模式推断</td>
+                        <td>新增记录，仅作参考</td>
+                        <td>用户反复追问细节 → 可能偏好详细回答</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="info-box warn">
+                <strong>反例（绝对不记录为偏好）：</strong><br>
+                &#8226; 用户讨论Java代码 ≠ 偏好Java（只是当前任务涉及）<br>
+                &#8226; 用户问了React问题 ≠ 偏好React前端<br>
+                &#8226; 用户当前的研究主题 ≠ 兴趣偏好
+            </div>
+        </div>
+
+        <!-- ========== 6. 数据库表结构 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#128451;</span> 数据库表结构</h2>
+            <div class="schema-grid">
+                <div class="schema-card">
+                    <div class="card-title">ai_message <span class="tag mysql">MySQL</span></div>
+                    <div class="field"><span class="field-name">id</span><span class="field-type">BIGINT PK</span></div>
+                    <div class="field"><span class="field-name">ai_session_id</span><span class="field-type">BIGINT</span></div>
+                    <div class="field"><span class="field-name">user_id</span><span class="field-type">BIGINT</span></div>
+                    <div class="field"><span class="field-name">round_no</span><span class="field-type">INT</span></div>
+                    <div class="field"><span class="field-name">role</span><span class="field-type">VARCHAR(32)</span></div>
+                    <div class="field"><span class="field-name">content</span><span class="field-type">TEXT</span></div>
+                    <div class="field"><span class="field-name">consolidated</span><span class="field-type">TINYINT (0/1)</span></div>
+                </div>
+                <div class="schema-card">
+                    <div class="card-title">ai_session <span class="tag mysql">MySQL</span></div>
+                    <div class="field"><span class="field-name">id</span><span class="field-type">BIGINT PK</span></div>
+                    <div class="field"><span class="field-name">user_id</span><span class="field-type">BIGINT</span></div>
+                    <div class="field"><span class="field-name">title</span><span class="field-type">VARCHAR(255)</span></div>
+                    <div class="field"><span class="field-name">summary</span><span class="field-type">TEXT (渐进式摘要)</span></div>
+                    <div class="field"><span class="field-name">round_count</span><span class="field-type">INT</span></div>
+                    <div class="field"><span class="field-name">status</span><span class="field-type">active/deleted</span></div>
+                </div>
+                <div class="schema-card">
+                    <div class="card-title">memory_fact <span class="tag mysql">MySQL</span> + <span class="tag redis">Redis Vector</span></div>
+                    <div class="field"><span class="field-name">id</span><span class="field-type">BIGINT PK</span></div>
+                    <div class="field"><span class="field-name">user_id</span><span class="field-type">BIGINT (跨会话)</span></div>
+                    <div class="field"><span class="field-name">session_id</span><span class="field-type">VARCHAR(64)</span></div>
+                    <div class="field"><span class="field-name">fact_id</span><span class="field-type">VARCHAR(128) UNIQUE</span></div>
+                    <div class="field"><span class="field-name">content</span><span class="field-type">TEXT</span></div>
+                    <div class="field"><span class="field-name">keywords</span><span class="field-type">VARCHAR(500)</span></div>
+                    <div class="field"><span class="field-name">source_seq_range</span><span class="field-type">VARCHAR(50) 如"3-5"</span></div>
+                    <div class="field"><span class="field-name">status</span><span class="field-type">active/superseded</span></div>
+                </div>
+                <div class="schema-card">
+                    <div class="card-title">memory_preference <span class="tag mysql">MySQL</span></div>
+                    <div class="field"><span class="field-name">id</span><span class="field-type">BIGINT PK</span></div>
+                    <div class="field"><span class="field-name">user_id</span><span class="field-type">BIGINT</span></div>
+                    <div class="field"><span class="field-name">session_id</span><span class="field-type">VARCHAR(64)</span></div>
+                    <div class="field"><span class="field-name">preference_category</span><span class="field-type">0=用户级 1=会话级</span></div>
+                    <div class="field"><span class="field-name">content</span><span class="field-type">TEXT</span></div>
+                    <div class="field"><span class="field-name">category</span><span class="field-type">交互风格/格式要求/...</span></div>
+                    <div class="field"><span class="field-name">source_type</span><span class="field-type">explicit/inferred</span></div>
+                    <div class="field"><span class="field-name">consolidation_seq</span><span class="field-type">INT</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 7. 技术栈 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#128736;</span> 技术栈</h2>
+            <table>
+                <thead>
+                    <tr><th>组件</th><th>技术</th><th>职责</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="tag java">后端</span></td>
+                        <td>Spring Boot + MyBatis-Plus</td>
+                        <td>业务逻辑、对话管理、上下文组装、整合触发与保存</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tag python">AI服务</span></td>
+                        <td>Python FastAPI</td>
+                        <td>LLM调用、记忆整合Agent、向量检索API</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tag redis">向量库</span></td>
+                        <td>Redis Stack (HNSW)</td>
+                        <td>事实向量存储、KNN余弦相似度搜索</td>
+                    </tr>
+                    <tr>
+                        <td>Embedding</td>
+                        <td>text-embedding-v4 (1024维)</td>
+                        <td>文本向量化（带Redis缓存）</td>
+                    </tr>
+                    <tr>
+                        <td>LLM</td>
+                        <td>Qwen-Plus (DashScope)</td>
+                        <td>对话生成、记忆整合（function calling）</td>
+                    </tr>
+                    <tr>
+                        <td>锁</td>
+                        <td>Redis SETNX</td>
+                        <td>分布式锁防并发整合</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ========== 8. 实时记忆更新 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#9889;</span> 实时记忆更新（每轮对话后）</h2>
+            <p style="color:#94a3b8; margin-bottom:15px;">
+                定时整合每4轮才执行一次，中间用户纠正事实或改变偏好不能及时生效。<br>
+                实时更新填补这个空窗期：每轮对话后异步调用，2-3秒内完成。
+            </p>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:20px 0;">
+                <div style="background:#0f172a; border-radius:10px; padding:16px; border:1px solid #334155;">
+                    <h3 style="color:#f472b6; margin-bottom:10px;">定时整合（重量级）</h3>
+                    <ul style="color:#94a3b8; font-size:0.85rem; padding-left:18px;">
+                        <li>每4轮触发一次</li>
+                        <li>40-60秒完成</li>
+                        <li>提取新事实、新待办</li>
+                        <li>生成渐进式摘要</li>
+                        <li>需要 Function Calling</li>
+                    </ul>
+                </div>
+                <div style="background:#0f172a; border-radius:10px; padding:16px; border:1px solid #334155;">
+                    <h3 style="color:#22d3ee; margin-bottom:10px;">实时更新（轻量级）</h3>
+                    <ul style="color:#94a3b8; font-size:0.85rem; padding-left:18px;">
+                        <li>每轮对话后触发</li>
+                        <li>2-3秒完成</li>
+                        <li>只检测事实纠正 + 偏好变更</li>
+                        <li>不做摘要不提取新事实</li>
+                        <li>纯 JSON 输出，不用工具</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>实时更新流程</h3>
+            <div class="flow-container">
+                <div class="flow-step">
+                    <div class="flow-number java">1</div>
+                    <div class="flow-content">
+                        <div class="flow-title">对话完成后异步触发</div>
+                        <div class="flow-desc">Java <code>doOnComplete</code> 中调用 <code>asyncUtils.realtimeMemoryUpdate()</code></div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number python">2</div>
+                    <div class="flow-content">
+                        <div class="flow-title">轻量级LLM判断</div>
+                        <div class="flow-desc">Python <code>RealtimeMemoryAgent</code> 用简短prompt让LLM判断：用户是否纠正了事实或改变了偏好？</div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number python">3</div>
+                    <div class="flow-content">
+                        <div class="flow-title">如有事实纠正 → 立即更新向量库</div>
+                        <div class="flow-desc">
+                            用 wrong_content 向量匹配旧事实 → 从Redis删除旧向量 → 写入新的正确事实向量
+                        </div>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number java">4</div>
+                    <div class="flow-content">
+                        <div class="flow-title">Java端保存更新</div>
+                        <div class="flow-desc">
+                            事实纠正 → 保存到MySQL memory_fact<br>
+                            偏好变更 → explicit覆盖更新 + 清除Redis偏好缓存<br>
+                            <strong>下一轮对话立即使用正确信息</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <strong>示例场景：</strong><br>
+                第1轮：用户说"设备X故障码是E-4012" → 提取为事实<br>
+                第2轮：用户说"不对，是E-5013" → <span style="color:#22d3ee">实时检测触发</span> → 向量库立即更新<br>
+                第3轮：AI回答相关问题时 → 向量检索命中的是正确的 E-5013
+            </div>
+        </div>
+
+        <!-- ========== 9. 完整时序 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#128337;</span> 完整对话时序图</h2>
+            <div class="code-block">
+<span class="keyword">用户</span>                <span class="keyword">Java后端</span>              <span class="keyword">Python AI</span>           <span class="keyword">Redis</span>          <span class="keyword">MySQL</span>
+  |                     |                     |                   |               |
+  |--- 发送消息 -------->|                     |                   |               |
+  |                     |-- 查窗口消息(N轮) ---|-------------------|-------------->|
+  |                     |<--------------------|-------------------|--- 返回消息 ---|
+  |                     |                     |                   |               |
+  |                     |-- 向量检索事实 ----->|                   |               |
+  |                     |                     |-- embed(query) -->|               |
+  |                     |                     |<-- vector --------|               |
+  |                     |                     |-- FT.SEARCH ----->|               |
+  |                     |                     |<-- top5 facts ----|               |
+  |                     |<-- 相关事实 ---------|                   |               |
+  |                     |                     |                   |               |
+  |                     |== 组装6部分上下文 ===|                   |               |
+  |                     |-- 调LLM对话 ------->|                   |               |
+  |                     |                     |-- chat(Qwen) ---->|               |
+  |<--- 流式回复 -------|<-- SSE stream ------|                   |               |
+  |                     |                     |                   |               |
+  |                     |== 检查是否触发整合 ==|                   |               |
+  |                     |   (roundCount%max==0)                   |               |
+  |                     |                     |                   |               |
+  |                     |-- SETNX lock -------|------------------>|               |
+  |                     |-- 查未整合消息 ------|-------------------|-------------->|
+  |                     |-- POST /consolidate->|                   |               |
+  |                     |                     |-- chat_with_tools->               |
+  |                     |                     |   (function calling loop)          |
+  |                     |                     |<-- JSON result ---|               |
+  |                     |                     |-- 向量入库 ------>|               |
+  |                     |<-- 整合结果 ---------|                   |               |
+  |                     |-- 保存事实/偏好/摘要-|-------------------|-------------->|
+  |                     |-- 标记consolidated=1-|-------------------|-------------->|
+  |                     |-- DEL lock ---------|------------------>|               |
+  |                     |                     |                   |               |</div>
+        </div>
+
+        <!-- ========== 9. 关键文件索引 ========== -->
+        <div class="section">
+            <h2><span class="icon">&#128194;</span> 关键文件索引</h2>
+            <table>
+                <thead>
+                    <tr><th>文件</th><th>职责</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>Java: AsyncUtils.java</code></td><td>整合触发入口、重试、保存结果到DB、实时更新</td></tr>
+                    <tr><td><code>Java: AiServiceImpl.java</code></td><td>上下文组装（6部分）、向量检索调用</td></tr>
+                    <tr><td><code>Java: AiMessageServiceImpl.java</code></td><td>窗口查询、待整合消息查询</td></tr>
+                    <tr><td><code>Python: agents/memory_agent.py</code></td><td>记忆整合Agent（prompt + 解析 + 重试）</td></tr>
+                    <tr><td><code>Python: agents/realtime_memory_agent.py</code></td><td>实时记忆更新Agent（事实纠正 + 偏好变更）</td></tr>
+                    <tr><td><code>Python: services/vector_service.py</code></td><td>Redis向量CRUD、KNN搜索</td></tr>
+                    <tr><td><code>Python: services/llm_service.py</code></td><td>DashScope LLM调用（function calling循环）</td></tr>
+                    <tr><td><code>Python: embeddings/text_embedding.py</code></td><td>text-embedding-v4 向量化（带缓存）</td></tr>
+                    <tr><td><code>Python: api/main.py</code></td><td>FastAPI端点：/consolidate、/search_facts、/realtime_update</td></tr>
+                    <tr><td><code>Python: schemas/memory.py</code></td><td>MemorySummary Pydantic模型定义</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align:center; color:#475569; margin-top:40px; font-size:0.85rem;">
+            Generated for FixAgent Memory System &bull; Last Updated: 2026-05-16
+        </div>
+    </div>
+</body>
+</html>

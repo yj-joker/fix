@@ -1,5 +1,6 @@
 package ai.weixiu.mq;
 
+import ai.weixiu.service.KnowledgeDocumentService;
 import com.rabbitmq.client.Channel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,17 +13,12 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-/**
- * 知识导入结果监听器
- *
- * <p>消费 Python 端完成知识导入后回传的结果消息，
- * 将任务状态写入 Redis 供前端轮询查询。</p>
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class KnowledgeResultListener {
 
+    private final KnowledgeDocumentService knowledgeDocumentService;
     private final RedisTemplate<String, Object> redisTemplate;
 
     private static final String TASK_STATUS_PREFIX = "knowledge:import:status:";
@@ -30,32 +26,50 @@ public class KnowledgeResultListener {
     @RabbitListener(queues = "knowledge.result.queue")
     public void onResult(Map<String, Object> message, Channel channel,
                          @Header(org.springframework.amqp.support.AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
-        String taskId = String.valueOf(message.get("taskId"));
+        String documentId = String.valueOf(message.get("documentId"));
+        // 兼容旧格式：如果没有 documentId 就用 taskId
+        if ("null".equals(documentId) || documentId.isEmpty()) {
+            documentId = String.valueOf(message.get("taskId"));
+        }
 
         try {
             boolean success = Boolean.TRUE.equals(message.get("success"));
-            String statusKey = TASK_STATUS_PREFIX + taskId;
+            String statusKey = TASK_STATUS_PREFIX + documentId;
 
             if (success) {
+                @SuppressWarnings("unchecked")
                 Map<String, Object> data = (Map<String, Object>) message.get("data");
+
+                // 核心：更新 knowledge_document 状态 + 切换 active 版本
+                knowledgeDocumentService.onParseSuccess(documentId, data != null ? data : Map.of());
+
+                // 兼容：仍写 Redis 状态供旧的前端轮询接口使用
                 redisTemplate.opsForValue().set(statusKey, Map.of(
                         "status", "completed",
-                        "totalChunks", data != null ? data.getOrDefault("total_chunks", 0) : 0,
+                        "textCount", data != null ? data.getOrDefault("text_count", 0) : 0,
+                        "imageCount", data != null ? data.getOrDefault("image_count", 0) : 0,
+                        "tableCount", data != null ? data.getOrDefault("table_count", 0) : 0,
                         "message", "导入完成"
                 ), 1, TimeUnit.HOURS);
-                log.info("[MQ消费] 知识导入完成, taskId={}", taskId);
+
+                log.info("[MQ消费] 知识导入完成, documentId={}", documentId);
             } else {
                 String error = String.valueOf(message.getOrDefault("error", "未知错误"));
+
+                // 核心：更新 knowledge_document 状态为 failed
+                knowledgeDocumentService.onParseFailed(documentId, error);
+
                 redisTemplate.opsForValue().set(statusKey, Map.of(
                         "status", "failed",
                         "message", error
                 ), 1, TimeUnit.HOURS);
-                log.error("[MQ消费] 知识导入失败, taskId={}, error={}", taskId, error);
+
+                log.error("[MQ消费] 知识导入失败, documentId={}, error={}", documentId, error);
             }
 
             channel.basicAck(deliveryTag, false);
         } catch (Exception e) {
-            log.error("[MQ消费] 处理知识导入结果异常, taskId={}", taskId, e);
+            log.error("[MQ消费] 处理知识导入结果异常, documentId={}", documentId, e);
             channel.basicNack(deliveryTag, false, false);
         }
     }

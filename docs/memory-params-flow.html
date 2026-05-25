@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆系统全流程参数文档</title>
+    <style>
+        :root {
+            --bg: #1a1b26;
+            --surface: #24283b;
+            --surface2: #2f3549;
+            --border: #414868;
+            --text: #c0caf5;
+            --text-dim: #565f89;
+            --accent: #7aa2f7;
+            --accent2: #bb9af7;
+            --green: #9ece6a;
+            --orange: #ff9e64;
+            --red: #f7768e;
+            --cyan: #7dcfff;
+            --yellow: #e0af68;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.2em;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: var(--text-dim);
+            margin-bottom: 50px;
+            font-size: 0.95em;
+        }
+
+        /* 全景图 */
+        .panorama {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 40px;
+            overflow-x: auto;
+        }
+
+        .panorama h2 {
+            color: var(--accent);
+            margin-bottom: 20px;
+            font-size: 1.4em;
+        }
+
+        .flow-diagram {
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.82em;
+            white-space: pre;
+            color: var(--text);
+            line-height: 1.5;
+            overflow-x: auto;
+        }
+
+        .flow-diagram .java { color: var(--orange); }
+        .flow-diagram .python { color: var(--green); }
+        .flow-diagram .arrow { color: var(--accent); }
+        .flow-diagram .comment { color: var(--text-dim); }
+        .flow-diagram .highlight { color: var(--cyan); }
+
+        /* 接口卡片 */
+        .api-section {
+            margin-bottom: 40px;
+        }
+
+        .api-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 25px;
+            transition: border-color 0.3s;
+        }
+
+        .api-card:hover {
+            border-color: var(--accent);
+        }
+
+        .api-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .api-method {
+            background: var(--green);
+            color: var(--bg);
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.8em;
+            font-family: monospace;
+        }
+
+        .api-path {
+            font-family: 'Cascadia Code', monospace;
+            font-size: 1.1em;
+            color: var(--cyan);
+        }
+
+        .api-timing {
+            margin-left: auto;
+            background: var(--surface2);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            color: var(--yellow);
+        }
+
+        .api-desc {
+            color: var(--text-dim);
+            margin-bottom: 20px;
+            padding-left: 5px;
+            border-left: 3px solid var(--border);
+            padding: 8px 15px;
+            background: var(--surface2);
+            border-radius: 0 6px 6px 0;
+        }
+
+        /* 方向标签 */
+        .direction-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin: 20px 0 12px;
+            font-weight: bold;
+            font-size: 0.95em;
+        }
+
+        .direction-label.request { color: var(--orange); }
+        .direction-label.response { color: var(--green); }
+
+        .direction-label .arrow-icon {
+            font-size: 1.2em;
+        }
+
+        /* 参数表格 */
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0 20px;
+            font-size: 0.88em;
+        }
+
+        .param-table th {
+            background: var(--surface2);
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 2px solid var(--border);
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .param-table td {
+            padding: 9px 14px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        .param-table tr:hover td {
+            background: rgba(122, 162, 247, 0.05);
+        }
+
+        .param-name {
+            font-family: 'Cascadia Code', monospace;
+            color: var(--cyan);
+            font-size: 0.95em;
+        }
+
+        .param-type {
+            font-family: monospace;
+            color: var(--accent2);
+            font-size: 0.9em;
+        }
+
+        .param-required {
+            color: var(--red);
+            font-weight: bold;
+        }
+
+        .param-optional {
+            color: var(--text-dim);
+        }
+
+        /* JSON代码块 */
+        .json-block {
+            background: #1e2030;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 18px 20px;
+            margin: 10px 0 15px;
+            overflow-x: auto;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.82em;
+            line-height: 1.6;
+        }
+
+        .json-key { color: var(--cyan); }
+        .json-string { color: var(--green); }
+        .json-number { color: var(--orange); }
+        .json-bool { color: var(--accent2); }
+        .json-null { color: var(--text-dim); }
+        .json-comment { color: var(--text-dim); font-style: italic; }
+
+        /* 处理逻辑表格 */
+        .logic-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 0.87em;
+        }
+
+        .logic-table th {
+            background: var(--surface2);
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 2px solid var(--border);
+            color: var(--accent);
+        }
+
+        .logic-table td {
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logic-table .step-num {
+            color: var(--yellow);
+            font-weight: bold;
+            text-align: center;
+            width: 40px;
+        }
+
+        .logic-table .db-name {
+            font-family: monospace;
+            color: var(--accent2);
+        }
+
+        .logic-table .action-text {
+            color: var(--text);
+        }
+
+        /* Redis Key */
+        .redis-section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 25px 30px;
+            margin-bottom: 40px;
+        }
+
+        .redis-section h3 {
+            color: var(--red);
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .redis-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88em;
+        }
+
+        .redis-table th {
+            background: var(--surface2);
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 2px solid var(--border);
+            color: var(--red);
+        }
+
+        .redis-table td {
+            padding: 9px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .redis-key {
+            font-family: monospace;
+            color: var(--orange);
+        }
+
+        /* 对比区域 */
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .comparison-card {
+            background: var(--surface2);
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid var(--border);
+        }
+
+        .comparison-card h4 {
+            margin-bottom: 10px;
+            font-size: 0.95em;
+        }
+
+        .comparison-card.realtime h4 { color: var(--cyan); }
+        .comparison-card.periodic h4 { color: var(--orange); }
+
+        .comparison-card ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .comparison-card li {
+            padding: 4px 0;
+            padding-left: 20px;
+            position: relative;
+            font-size: 0.88em;
+            color: var(--text-dim);
+        }
+
+        .comparison-card li::before {
+            content: '•';
+            position: absolute;
+            left: 5px;
+            color: var(--accent);
+        }
+
+        /* 序号 */
+        .section-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: var(--accent);
+            color: var(--bg);
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-right: 12px;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+            color: var(--text);
+        }
+
+        /* 注意事项 */
+        .note-box {
+            background: rgba(224, 175, 104, 0.1);
+            border: 1px solid var(--yellow);
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin: 15px 0;
+            font-size: 0.88em;
+        }
+
+        .note-box .note-title {
+            color: var(--yellow);
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+            .api-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .api-timing {
+                margin-left: 0;
+            }
+            body {
+                padding: 20px 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>记忆系统全流程参数文档</h1>
+    <p class="subtitle">Java (Spring Boot) ⟷ Python (FastAPI) 接口参数交互规范</p>
+
+    <!-- ===== 全景图 ===== -->
+    <div class="panorama">
+        <h2>📊 数据流全景图</h2>
+        <div class="flow-diagram"><span class="comment">用户发消息</span>
+    │
+    ▼
+<span class="java">┌─────────────────────── Java端 ───────────────────────────┐</span>
+<span class="java">│</span>  <span class="highlight">1.</span> 调用 <span class="python">POST /ai/memory/search_facts</span> 检索相关事实     <span class="java">│</span>
+<span class="java">│</span>     <span class="arrow">→</span> 将事实注入到AI对话上下文                         <span class="java">│</span>
+<span class="java">│</span>                                                          <span class="java">│</span>
+<span class="java">│</span>  <span class="highlight">2.</span> 调用Python AI生成回复（流式SSE）                     <span class="java">│</span>
+<span class="java">│</span>                                                          <span class="java">│</span>
+<span class="java">│</span>  <span class="highlight">3.</span> doOnComplete:                                        <span class="java">│</span>
+<span class="java">│</span>     ├── saveAiReply()                                    <span class="java">│</span>
+<span class="java">│</span>     │                                                     <span class="java">│</span>
+<span class="java">│</span>     ├── <span class="cyan">异步: realtimeMemoryUpdate()</span>                     <span class="java">│</span>
+<span class="java">│</span>     │     <span class="comment">(每轮触发, 2-3秒完成)</span>                           <span class="java">│</span>
+<span class="java">│</span>     │     <span class="arrow">──────→</span> <span class="python">POST /ai/memory/realtime_update</span>        <span class="java">│</span>
+<span class="java">│</span>     │                    │                                <span class="java">│</span>
+<span class="java">│</span>     │              <span class="python">Python轻量LLM判断</span>                      <span class="java">│</span>
+<span class="java">│</span>     │                    │                                <span class="java">│</span>
+<span class="java">│</span>     │     <span class="arrow">←──────</span> 返回: 纠正/偏好变更/superseded_ids      <span class="java">│</span>
+<span class="java">│</span>     │     <span class="arrow">→</span> 标记旧事实 superseded (MySQL)                <span class="java">│</span>
+<span class="java">│</span>     │     <span class="arrow">→</span> insert 新正确事实 (MySQL)                   <span class="java">│</span>
+<span class="java">│</span>     │     <span class="arrow">→</span> upsert/delete 偏好 (MySQL)                  <span class="java">│</span>
+<span class="java">│</span>     │     <span class="arrow">→</span> 清除偏好缓存 (Redis)                        <span class="java">│</span>
+<span class="java">│</span>     │                                                     <span class="java">│</span>
+<span class="java">│</span>     └── <span class="orange">每N轮: integrationMemory()</span>                       <span class="java">│</span>
+<span class="java">│</span>           <span class="comment">(定时触发, 40-60秒完成)</span>                        <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">──────→</span> <span class="python">POST /ai/memory/consolidate</span>           <span class="java">│</span>
+<span class="java">│</span>                          │                               <span class="java">│</span>
+<span class="java">│</span>                    <span class="python">Python完整LLM整合</span>                     <span class="java">│</span>
+<span class="java">│</span>                   <span class="comment">(带function calling)</span>                    <span class="java">│</span>
+<span class="java">│</span>                          │                               <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">←──────</span> 返回: 完整摘要(7类数据)                <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">→</span> insert 新事实 (MySQL + 向量库)                <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">→</span> 标记 superseded 旧事实 (MySQL)                <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">→</span> upsert/insert 偏好 (MySQL)                   <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">→</span> insert 未完成事项 (MySQL)                     <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">→</span> 标记已解决事项 (MySQL)                        <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">→</span> 更新 session 摘要 (MySQL)                     <span class="java">│</span>
+<span class="java">│</span>           <span class="arrow">→</span> 标记消息 consolidated=1 (MySQL)               <span class="java">│</span>
+<span class="java">└──────────────────────────────────────────────────────────┘</span></div>
+    </div>
+
+    <!-- ===== 实时 vs 定时对比 ===== -->
+    <div class="comparison">
+        <div class="comparison-card realtime">
+            <h4>⚡ 实时更新 (realtime_update)</h4>
+            <ul>
+                <li>每轮对话后触发</li>
+                <li>2-3秒完成</li>
+                <li>只处理"纠正事实"和"偏好变更"</li>
+                <li>不用 function calling（纯JSON输出）</li>
+                <li>不阻塞主对话流</li>
+                <li>是定时整合的补充，非替代</li>
+            </ul>
+        </div>
+        <div class="comparison-card periodic">
+            <h4>🔄 定时整合 (consolidate)</h4>
+            <ul>
+                <li>每N轮（maxMemory）触发</li>
+                <li>40-60秒完成</li>
+                <li>完整整合：新事实、偏好、待办、摘要</li>
+                <li>带 function calling（向量检索去重）</li>
+                <li>有分布式锁 + 重试机制</li>
+                <li>处理所有 consolidated=0 的消息</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- ===== 接口一：事实检索 ===== -->
+    <div class="api-section">
+        <div class="section-title">
+            <span class="section-num">1</span> 事实检索接口
+        </div>
+
+        <div class="api-card">
+            <div class="api-header">
+                <span class="api-method">POST</span>
+                <span class="api-path">/ai/memory/search_facts</span>
+                <span class="api-timing">⏱ ~50ms</span>
+            </div>
+            <div class="api-desc">
+                每轮对话前，Java端用用户消息语义检索相关历史事实，注入AI对话上下文，让AI能"记住"之前的信息。
+            </div>
+
+            <div class="direction-label request">
+                <span class="arrow-icon">→</span> Java → Python 请求参数
+            </div>
+            <table class="param-table">
+                <thead>
+                    <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="param-name">query</td>
+                        <td class="param-type">String</td>
+                        <td class="param-required">✅</td>
+                        <td>用户当前发送的消息文本，用于语义向量匹配</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">top_k</td>
+                        <td class="param-type">int</td>
+                        <td class="param-optional">❌</td>
+                        <td>最多返回几条最相关的事实，默认5</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="direction-label response">
+                <span class="arrow-icon">←</span> Python → Java 返回
+            </div>
+            <div class="json-block">{
+  <span class="json-key">"facts"</span>: [
+    {
+      <span class="json-key">"content"</span>: <span class="json-string">"用户的设备型号是X200"</span>,
+      <span class="json-key">"score"</span>: <span class="json-number">0.8523</span>,
+      <span class="json-key">"doc_id"</span>: <span class="json-string">"fact:123:rt_1716000000"</span>,
+      <span class="json-key">"keywords"</span>: <span class="json-string">"设备,型号,X200"</span>,
+      <span class="json-key">"session_id"</span>: <span class="json-string">"123"</span>
+    }
+  ],
+  <span class="json-key">"query_time_ms"</span>: <span class="json-number">45</span>
+}</div>
+            <table class="param-table">
+                <thead>
+                    <tr><th>返回字段</th><th>类型</th><th>说明</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td class="param-name">facts[]</td><td class="param-type">List</td><td>匹配的事实列表（按相关度排序）</td></tr>
+                    <tr><td class="param-name">facts[].content</td><td class="param-type">String</td><td>事实文本内容</td></tr>
+                    <tr><td class="param-name">facts[].score</td><td class="param-type">float</td><td>语义相似度分数（越高越相关）</td></tr>
+                    <tr><td class="param-name">facts[].doc_id</td><td class="param-type">String</td><td>向量库文档ID</td></tr>
+                    <tr><td class="param-name">facts[].keywords</td><td class="param-type">String</td><td>事实关键词（逗号分隔）</td></tr>
+                    <tr><td class="param-name">facts[].session_id</td><td class="param-type">String</td><td>事实来源会话ID</td></tr>
+                    <tr><td class="param-name">query_time_ms</td><td class="param-type">int</td><td>检索耗时（毫秒）</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ===== 接口二：定时整合 ===== -->
+    <div class="api-section">
+        <div class="section-title">
+            <span class="section-num">2</span> 定时记忆整合接口
+        </div>
+
+        <div class="api-card">
+            <div class="api-header">
+                <span class="api-method">POST</span>
+                <span class="api-path">/ai/memory/consolidate</span>
+                <span class="api-timing">⏱ 40-60s</span>
+            </div>
+            <div class="api-desc">
+                每N轮（maxMemory）对话后异步触发，做完整的记忆整合：提取新事实、发现偏好、识别待办、生成渐进式摘要。带分布式锁防并发，失败自动重试（最多2次）。
+            </div>
+
+            <div class="direction-label request">
+                <span class="arrow-icon">→</span> Java → Python 请求参数（MemoryIntegrationParametersVO）
+            </div>
+            <div class="json-block">{
+  <span class="json-key">"sessionId"</span>: <span class="json-string">"123"</span>,
+  <span class="json-key">"memoryMessages"</span>: [
+    { <span class="json-key">"role"</span>: <span class="json-string">"user"</span>, <span class="json-key">"content"</span>: <span class="json-string">"电动机轴承过热怎么办？"</span> },
+    { <span class="json-key">"role"</span>: <span class="json-string">"assistant"</span>, <span class="json-key">"content"</span>: <span class="json-string">"根据故障码E-5013..."</span> }
+  ],
+  <span class="json-key">"memoryPreferenceVOList"</span>: [
+    {
+      <span class="json-key">"content"</span>: <span class="json-string">"用户偏好简短回复"</span>,
+      <span class="json-key">"category"</span>: <span class="json-string">"交互风格"</span>,
+      <span class="json-key">"preferenceCategory"</span>: <span class="json-number">0</span>
+    }
+  ],
+  <span class="json-key">"memoryUnresolvedVOList"</span>: [
+    {
+      <span class="json-key">"id"</span>: <span class="json-number">42</span>,
+      <span class="json-key">"content"</span>: <span class="json-string">"需要检查电机轴承温度"</span>,
+      <span class="json-key">"type"</span>: <span class="json-string">"进行中任务"</span>,
+      <span class="json-key">"status"</span>: <span class="json-string">"active"</span>
+    }
+  ],
+  <span class="json-key">"previousSummary"</span>: <span class="json-string">"上一轮整合产出的摘要（首次为null）"</span>
+}</div>
+
+            <table class="param-table">
+                <thead>
+                    <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td class="param-name">sessionId</td><td class="param-type">String</td><td class="param-required">✅</td><td>会话ID</td></tr>
+                    <tr><td class="param-name">memoryMessages[]</td><td class="param-type">List&lt;MemoryMessage&gt;</td><td class="param-required">✅</td><td>待整合的对话消息列表（所有consolidated=0的消息）</td></tr>
+                    <tr><td class="param-name">memoryMessages[].role</td><td class="param-type">String</td><td class="param-required">✅</td><td>"user" 或 "assistant"</td></tr>
+                    <tr><td class="param-name">memoryMessages[].content</td><td class="param-type">String</td><td class="param-required">✅</td><td>消息内容</td></tr>
+                    <tr><td class="param-name">memoryPreferenceVOList[]</td><td class="param-type">List&lt;MemoryPreferenceVO&gt;</td><td class="param-optional">❌</td><td>已有偏好列表（让LLM避免重复提取）</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.content</td><td class="param-type">String</td><td class="param-required">✅</td><td>偏好描述</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.category</td><td class="param-type">String</td><td class="param-required">✅</td><td>交互风格 | 格式要求 | 工作习惯 | 关注领域 | 其他</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.preferenceCategory</td><td class="param-type">int</td><td class="param-required">✅</td><td>0=用户级(所有对话公用) / 1=会话级(单次会话)</td></tr>
+                    <tr><td class="param-name">memoryUnresolvedVOList[]</td><td class="param-type">List&lt;MemoryUnresolvedVO&gt;</td><td class="param-optional">❌</td><td>已有未完成事项（让LLM判断哪些已解决）</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.id</td><td class="param-type">Long</td><td class="param-required">✅</td><td>数据库主键ID（用于精确标记已解决）</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.content</td><td class="param-type">String</td><td class="param-required">✅</td><td>任务描述</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.type</td><td class="param-type">String</td><td class="param-required">✅</td><td>未答复问题 | 进行中任务 | 用户待办</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.status</td><td class="param-type">String</td><td class="param-required">✅</td><td>active | superseded</td></tr>
+                    <tr><td class="param-name">previousSummary</td><td class="param-type">String</td><td class="param-optional">❌</td><td>上一轮整合摘要（渐进式更新基础，首次为null）</td></tr>
+                </tbody>
+            </table>
+
+            <div class="direction-label response">
+                <span class="arrow-icon">←</span> Python → Java 返回（MemoryConsolidateResponse）
+            </div>
+            <div class="json-block">{
+  <span class="json-key">"success"</span>: <span class="json-bool">true</span>,
+  <span class="json-key">"message"</span>: <span class="json-string">"整理完成"</span>,
+  <span class="json-key">"code"</span>: <span class="json-number">200</span>,
+  <span class="json-key">"session_id"</span>: <span class="json-string">"123"</span>,
+  <span class="json-key">"summary"</span>: {
+    <span class="json-key">"newFacts"</span>: [
+      {
+        <span class="json-key">"content"</span>: <span class="json-string">"用户的设备型号是X200"</span>,
+        <span class="json-key">"keywords"</span>: <span class="json-string">"设备,型号,X200"</span>,
+        <span class="json-key">"sourceSeqRange"</span>: <span class="json-string">"3-5"</span>
+      }
+    ],
+    <span class="json-key">"supersededIds"</span>: [<span class="json-string">"fact:123:old_id_1"</span>, <span class="json-string">"fact:123:old_id_2"</span>],
+    <span class="json-key">"updatedPreferences"</span>: [
+      {
+        <span class="json-key">"content"</span>: <span class="json-string">"用户偏好简短回复"</span>,
+        <span class="json-key">"category"</span>: <span class="json-string">"交互风格"</span>,
+        <span class="json-key">"preferenceCategory"</span>: <span class="json-number">0</span>,
+        <span class="json-key">"sourceType"</span>: <span class="json-string">"explicit"</span>
+      }
+    ],
+    <span class="json-key">"updatedUnresolved"</span>: [
+      {
+        <span class="json-key">"content"</span>: <span class="json-string">"需要检查电机轴承温度"</span>,
+        <span class="json-key">"type"</span>: <span class="json-string">"进行中任务"</span>,
+        <span class="json-key">"status"</span>: <span class="json-string">"active"</span>
+      }
+    ],
+    <span class="json-key">"resolvedItems"</span>: [<span class="json-number">42</span>, <span class="json-number">56</span>],
+    <span class="json-key">"briefSummary"</span>: <span class="json-string">"用户正在诊断X200电机轴承过热问题，已确认故障码E-5013..."</span>
+  },
+  <span class="json-key">"original_count"</span>: <span class="json-number">8</span>,
+  <span class="json-key">"consolidated_at"</span>: <span class="json-string">"2026-05-17T12:00:00"</span>
+}</div>
+
+            <table class="param-table">
+                <thead>
+                    <tr><th>返回字段</th><th>类型</th><th>说明</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td class="param-name">summary.newFacts[]</td><td class="param-type">List&lt;FactItem&gt;</td><td>本轮新提取的事实（自包含、原子化）</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.content</td><td class="param-type">String</td><td>事实描述</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.keywords</td><td class="param-type">String</td><td>检索关键词，逗号分隔</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.sourceSeqRange</td><td class="param-type">String</td><td>来源消息序号范围，如"3-5"</td></tr>
+                    <tr><td class="param-name">summary.supersededIds[]</td><td class="param-type">List&lt;String&gt;</td><td>被新事实替代的旧事实向量库doc_id</td></tr>
+                    <tr><td class="param-name">summary.updatedPreferences[]</td><td class="param-type">List&lt;PreferenceItem&gt;</td><td>新发现/变更的偏好</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.content</td><td class="param-type">String</td><td>偏好描述</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.category</td><td class="param-type">String</td><td>分类</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.preferenceCategory</td><td class="param-type">int</td><td>0=用户级 / 1=会话级</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.sourceType</td><td class="param-type">String</td><td>"explicit"=用户明说 / "inferred"=行为推断</td></tr>
+                    <tr><td class="param-name">summary.updatedUnresolved[]</td><td class="param-type">List&lt;UnresolvedItem&gt;</td><td>新的未完成事项</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.content</td><td class="param-type">String</td><td>任务描述</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.type</td><td class="param-type">String</td><td>未答复问题 | 进行中任务 | 用户待办</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.status</td><td class="param-type">String</td><td>active</td></tr>
+                    <tr><td class="param-name">summary.resolvedItems[]</td><td class="param-type">List&lt;Long&gt;</td><td>已解决事项的数据库主键ID列表</td></tr>
+                    <tr><td class="param-name">summary.briefSummary</td><td class="param-type">String</td><td>100字以内渐进式摘要</td></tr>
+                    <tr><td class="param-name">original_count</td><td class="param-type">int</td><td>本次整合的消息数量</td></tr>
+                    <tr><td class="param-name">consolidated_at</td><td class="param-type">String</td><td>整合完成时间（ISO格式）</td></tr>
+                </tbody>
+            </table>
+
+            <div class="note-box">
+                <div class="note-title">⚠️ Java端对 sourceType 的处理策略</div>
+                <p><strong>explicit（用户明说）</strong>：查找同类偏好 → 已存在则update内容，不存在则insert新记录</p>
+                <p><strong>inferred（推断）</strong>：直接insert新记录（不覆盖已有，可能产生重复，由后续整合去重）</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 接口三：实时更新 ===== -->
+    <div class="api-section">
+        <div class="section-title">
+            <span class="section-num">3</span> 实时记忆更新接口
+        </div>
+
+        <div class="api-card">
+            <div class="api-header">
+                <span class="api-method">POST</span>
+                <span class="api-path">/ai/memory/realtime_update</span>
+                <span class="api-timing">⏱ 2-3s</span>
+            </div>
+            <div class="api-desc">
+                每轮对话完成后立即异步调用。轻量级LLM判断用户是否纠正了事实或改变了偏好。<br>
+                如果检测到变更 → Python端立即更新向量库（事实替换），返回变更信息给Java端保存到MySQL。
+            </div>
+
+            <div class="direction-label request">
+                <span class="arrow-icon">→</span> Java → Python 请求参数
+            </div>
+            <div class="json-block">{
+  <span class="json-key">"session_id"</span>: <span class="json-string">"123"</span>,
+  <span class="json-key">"user_message"</span>: <span class="json-string">"不对，故障码应该是E-5013不是E-4012"</span>,
+  <span class="json-key">"ai_response"</span>: <span class="json-string">"AI的回复内容"</span>
+}</div>
+
+            <table class="param-table">
+                <thead>
+                    <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td class="param-name">session_id</td><td class="param-type">String</td><td class="param-required">✅</td><td>会话ID</td></tr>
+                    <tr><td class="param-name">user_message</td><td class="param-type">String</td><td class="param-required">✅</td><td>用户本轮消息（检测是否包含纠正/偏好变更）</td></tr>
+                    <tr><td class="param-name">ai_response</td><td class="param-type">String</td><td class="param-optional">❌</td><td>AI本轮回复（帮助判断AI是否用了错误信息）</td></tr>
+                    <tr><td class="param-name">recent_facts</td><td class="param-type">String</td><td class="param-optional">❌</td><td>JSON格式的本轮注入事实列表，默认"[]"</td></tr>
+                </tbody>
+            </table>
+
+            <div class="direction-label response">
+                <span class="arrow-icon">←</span> Python → Java 返回
+            </div>
+            <div class="json-block">{
+  <span class="json-key">"has_update"</span>: <span class="json-bool">true</span>,
+  <span class="json-key">"fact_corrections"</span>: [
+    {
+      <span class="json-key">"wrong_content"</span>: <span class="json-string">"故障码是E-4012"</span>,
+      <span class="json-key">"correct_content"</span>: <span class="json-string">"故障码是E-5013"</span>,
+      <span class="json-key">"keywords"</span>: <span class="json-string">"故障码,E-5013"</span>
+    }
+  ],
+  <span class="json-key">"preference_changes"</span>: [
+    {
+      <span class="json-key">"action"</span>: <span class="json-string">"upsert"</span>,           <span class="json-comment">// 或 "delete"</span>
+      <span class="json-key">"content"</span>: <span class="json-string">"用户偏好用英文回复"</span>,
+      <span class="json-key">"category"</span>: <span class="json-string">"交互风格"</span>,
+      <span class="json-key">"preferenceCategory"</span>: <span class="json-number">0</span>,
+      <span class="json-key">"sourceType"</span>: <span class="json-string">"explicit"</span>
+    }
+  ],
+  <span class="json-key">"superseded_fact_ids"</span>: [<span class="json-string">"fact:123:old_doc_id_1"</span>],
+  <span class="json-key">"latency_ms"</span>: <span class="json-number">1850</span>
+}</div>
+
+            <table class="param-table">
+                <thead>
+                    <tr><th>返回字段</th><th>类型</th><th>说明</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td class="param-name">has_update</td><td class="param-type">boolean</td><td>是否检测到需要更新</td></tr>
+                    <tr><td class="param-name">fact_corrections[]</td><td class="param-type">List</td><td>事实纠正列表（Python已在向量库中完成新旧替换）</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.wrong_content</td><td class="param-type">String</td><td>旧的错误事实描述（用于向量匹配定位）</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.correct_content</td><td class="param-type">String</td><td>纠正后的正确事实</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.keywords</td><td class="param-type">String</td><td>检索关键词</td></tr>
+                    <tr><td class="param-name">preference_changes[]</td><td class="param-type">List</td><td>偏好变更列表（Java端负责MySQL持久化）</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.action</td><td class="param-type">String</td><td><strong>"upsert"</strong>=新增或修改 / <strong>"delete"</strong>=撤销删除</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.content</td><td class="param-type">String</td><td>upsert时为新偏好内容，delete时为要删除的偏好描述</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.category</td><td class="param-type">String</td><td>交互风格 | 格式要求 | 工作习惯 | 关注领域 | 其他</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.preferenceCategory</td><td class="param-type">int</td><td>0=用户级 / 1=会话级</td></tr>
+                    <tr><td class="param-name">&nbsp;&nbsp;.sourceType</td><td class="param-type">String</td><td>永远是"explicit"（用户明确表达才会触发实时更新）</td></tr>
+                    <tr><td class="param-name">superseded_fact_ids[]</td><td class="param-type">List&lt;String&gt;</td><td>被替代的旧事实向量库doc_id<br>（Java端用这些ID在MySQL中标记旧事实status=superseded）</td></tr>
+                    <tr><td class="param-name">latency_ms</td><td class="param-type">int</td><td>本次检测耗时（毫秒）</td></tr>
+                </tbody>
+            </table>
+
+            <div class="note-box">
+                <div class="note-title">⚠️ Java端对 action 的处理策略</div>
+                <p><strong>action="upsert"</strong>：查询同userId+category+preferenceCategory的已有偏好 → 存在则updateById，不存在则save新记录</p>
+                <p><strong>action="delete"</strong>：用content模糊匹配(LIKE)找到目标偏好 → 物理删除(removeByIds)</p>
+                <p>两种操作完成后都会清除Redis偏好缓存。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Java端处理逻辑 ===== -->
+    <div class="api-section">
+        <div class="section-title">
+            <span class="section-num">4</span> Java端持久化处理逻辑
+        </div>
+
+        <div class="api-card">
+            <h3 style="color: var(--orange); margin-bottom: 15px;">integrationMemory() 收到整合返回后</h3>
+            <table class="logic-table">
+                <thead>
+                    <tr><th>步骤</th><th>Python返回字段</th><th>Java操作</th><th>目标表</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td class="step-num">1</td><td class="param-name">newFacts[]</td><td class="action-text">批量 insert（设置userId, factId=UUID, status="active"）</td><td class="db-name">memory_fact</td></tr>
+                    <tr><td class="step-num">2</td><td class="param-name">supersededIds[]</td><td class="action-text">按 factId IN (...) 更新 status="superseded", superseded_at=now()</td><td class="db-name">memory_fact</td></tr>
+                    <tr><td class="step-num">3</td><td class="param-name">updatedPreferences[]</td><td class="action-text">explicit → upsert（同类已有则update）<br>inferred → 直接 insert</td><td class="db-name">memory_preference</td></tr>
+                    <tr><td class="step-num">4</td><td class="param-name">updatedUnresolved[]</td><td class="action-text">批量 insert（设置 consolidationSeq）</td><td class="db-name">memory_unresolved</td></tr>
+                    <tr><td class="step-num">5</td><td class="param-name">resolvedItems[]</td><td class="action-text">按 id IN (...) 更新 status="resolved"</td><td class="db-name">memory_unresolved</td></tr>
+                    <tr><td class="step-num">6</td><td class="param-name">briefSummary</td><td class="action-text">更新 session.summary 字段</td><td class="db-name">ai_session</td></tr>
+                    <tr><td class="step-num">7</td><td>—</td><td class="action-text">将已处理的消息标记 consolidated=1</td><td class="db-name">ai_message</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="api-card">
+            <h3 style="color: var(--cyan); margin-bottom: 15px;">realtimeMemoryUpdate() 收到实时更新返回后</h3>
+            <table class="logic-table">
+                <thead>
+                    <tr><th>步骤</th><th>Python返回字段</th><th>Java操作</th><th>目标表</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td class="step-num">1</td><td class="param-name">superseded_fact_ids[]</td><td class="action-text">按 factId IN (...) 更新 status="superseded", superseded_at=now()</td><td class="db-name">memory_fact</td></tr>
+                    <tr><td class="step-num">2</td><td class="param-name">fact_corrections[].correct_content</td><td class="action-text">批量 insert 新的正确事实（factId=UUID, status="active"）</td><td class="db-name">memory_fact</td></tr>
+                    <tr><td class="step-num">3</td><td class="param-name">preference_changes[] (action="delete")</td><td class="action-text">LIKE模糊匹配content → 物理删除 removeByIds</td><td class="db-name">memory_preference</td></tr>
+                    <tr><td class="step-num">4</td><td class="param-name">preference_changes[] (action="upsert")</td><td class="action-text">查询同类已有 → 存在则 updateById / 不存在则 save</td><td class="db-name">memory_preference</td></tr>
+                    <tr><td class="step-num">5</td><td>—</td><td class="action-text">删除 Redis 偏好缓存 key</td><td class="db-name">Redis</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ===== Redis Key ===== -->
+    <div class="redis-section">
+        <div class="section-title">
+            <span class="section-num">5</span> Redis 缓存 Key 规范
+        </div>
+        <table class="redis-table">
+            <thead>
+                <tr><th>Key 模式</th><th>用途</th><th>TTL</th><th>清除时机</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="redis-key">Memory:Preference:{userId}:{sessionId}</td>
+                    <td>偏好缓存（CachedPreferences对象，含userPrefs和sessionPrefs）</td>
+                    <td>5小时</td>
+                    <td>偏好变更后立即删除</td>
+                </tr>
+                <tr>
+                    <td class="redis-key">Memory:Consolidation:Lock:{sessionId}</td>
+                    <td>整合分布式锁（防止并发整合同一会话）</td>
+                    <td>5分钟</td>
+                    <td>整合完成后 finally 中删除</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ===== Python内部LLM输出模型 ===== -->
+    <div class="api-section">
+        <div class="section-title">
+            <span class="section-num">6</span> Python端 LLM 输出结构（内部模型）
+        </div>
+
+        <div class="api-card">
+            <h3 style="color: var(--orange); margin-bottom: 15px;">MemorySummary — 定时整合 LLM 输出</h3>
+            <div class="api-desc">
+                memory_agent.py 中 LLM 返回的结构化JSON，经 Pydantic 校验后放入 metadata["summary"] 返回给Java端。
+            </div>
+            <div class="json-block"><span class="json-comment">// Python: schemas/memory.py → MemorySummary</span>
+{
+  <span class="json-key">"new_facts"</span>: [                      <span class="json-comment">// → Java收到时key为 newFacts（驼峰）</span>
+    {
+      <span class="json-key">"content"</span>: <span class="json-string">"自包含的事实描述"</span>,
+      <span class="json-key">"keywords"</span>: <span class="json-string">"逗号分隔关键词"</span>,
+      <span class="json-key">"source_seq_range"</span>: <span class="json-string">"3-5"</span>        <span class="json-comment">// → sourceSeqRange</span>
+    }
+  ],
+  <span class="json-key">"superseded_ids"</span>: [<span class="json-string">"doc_id_1"</span>],       <span class="json-comment">// → supersededIds</span>
+  <span class="json-key">"updated_preferences"</span>: [              <span class="json-comment">// → updatedPreferences</span>
+    {
+      <span class="json-key">"content"</span>: <span class="json-string">"偏好描述"</span>,
+      <span class="json-key">"category"</span>: <span class="json-string">"交互风格"</span>,
+      <span class="json-key">"preferenceCategory"</span>: <span class="json-number">0</span>,
+      <span class="json-key">"sourceType"</span>: <span class="json-string">"explicit"</span>
+    }
+  ],
+  <span class="json-key">"updated_unresolved"</span>: [               <span class="json-comment">// → updatedUnresolved</span>
+    {
+      <span class="json-key">"content"</span>: <span class="json-string">"待办描述"</span>,
+      <span class="json-key">"type"</span>: <span class="json-string">"进行中任务"</span>,
+      <span class="json-key">"status"</span>: <span class="json-string">"active"</span>
+    }
+  ],
+  <span class="json-key">"resolved_item_ids"</span>: [<span class="json-number">42</span>, <span class="json-number">56</span>],        <span class="json-comment">// → resolvedItems</span>
+  <span class="json-key">"brief_summary"</span>: <span class="json-string">"100字以内摘要"</span>     <span class="json-comment">// → briefSummary</span>
+}</div>
+        </div>
+
+        <div class="api-card">
+            <h3 style="color: var(--cyan); margin-bottom: 15px;">RealtimeUpdateResult — 实时更新 LLM 输出</h3>
+            <div class="api-desc">
+                realtime_memory_agent.py 中 LLM 返回的检测结果。Python端处理向量库操作后，附加 superseded_fact_ids 返回给Java。
+            </div>
+            <div class="json-block"><span class="json-comment">// Python: agents/realtime_memory_agent.py → RealtimeUpdateResult</span>
+{
+  <span class="json-key">"has_update"</span>: <span class="json-bool">true</span>,
+  <span class="json-key">"fact_corrections"</span>: [
+    {
+      <span class="json-key">"wrong_content"</span>: <span class="json-string">"错误事实（用于向量匹配定位旧记录）"</span>,
+      <span class="json-key">"correct_content"</span>: <span class="json-string">"纠正后的正确事实"</span>,
+      <span class="json-key">"keywords"</span>: <span class="json-string">"检索关键词"</span>
+    }
+  ],
+  <span class="json-key">"preference_changes"</span>: [
+    {
+      <span class="json-key">"action"</span>: <span class="json-string">"upsert"</span>,         <span class="json-comment">// "upsert" | "delete"</span>
+      <span class="json-key">"content"</span>: <span class="json-string">"偏好描述"</span>,
+      <span class="json-key">"category"</span>: <span class="json-string">"交互风格"</span>,
+      <span class="json-key">"preferenceCategory"</span>: <span class="json-number">0</span>,
+      <span class="json-key">"sourceType"</span>: <span class="json-string">"explicit"</span>    <span class="json-comment">// 实时检测永远是 explicit</span>
+    }
+  ]
+}
+
+<span class="json-comment">// Python端处理后附加字段（向量库操作结果）：</span>
+<span class="json-key">"superseded_fact_ids"</span>: [<span class="json-string">"fact:123:doc_id"</span>]  <span class="json-comment">// 被删除的旧事实向量ID</span></div>
+        </div>
+    </div>
+
+    <!-- ===== 枚举值速查 ===== -->
+    <div class="api-section">
+        <div class="section-title">
+            <span class="section-num">7</span> 枚举值速查表
+        </div>
+
+        <div class="api-card">
+            <table class="param-table">
+                <thead>
+                    <tr><th>字段</th><th>可选值</th><th>说明</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="param-name">role</td>
+                        <td><code>"user"</code> | <code>"assistant"</code></td>
+                        <td>消息角色</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">category</td>
+                        <td><code>"交互风格"</code> | <code>"格式要求"</code> | <code>"工作习惯"</code> | <code>"关注领域"</code> | <code>"其他"</code></td>
+                        <td>偏好分类</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">preferenceCategory</td>
+                        <td><code>0</code> = 用户级 | <code>1</code> = 会话级</td>
+                        <td>0: 所有对话公用 / 1: 仅当前会话</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">sourceType</td>
+                        <td><code>"explicit"</code> | <code>"inferred"</code></td>
+                        <td>explicit: 用户直接表达 / inferred: 从行为推断</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">action (偏好)</td>
+                        <td><code>"upsert"</code> | <code>"delete"</code></td>
+                        <td>upsert: 新增或修改 / delete: 撤销删除</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">fact.status</td>
+                        <td><code>"active"</code> | <code>"superseded"</code></td>
+                        <td>active: 有效事实 / superseded: 已被替代</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">unresolved.status</td>
+                        <td><code>"active"</code> | <code>"superseded"</code> | <code>"resolved"</code></td>
+                        <td>active: 进行中 / superseded: 已放弃 / resolved: 已解决</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">unresolved.type</td>
+                        <td><code>"未答复问题"</code> | <code>"进行中任务"</code> | <code>"用户待办"</code></td>
+                        <td>未完成事项的类型</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <p style="text-align: center; color: var(--text-dim); margin-top: 40px; font-size: 0.85em;">
+        Generated: 2026-05-17 | Memory System v2.0 | Java Spring Boot + Python FastAPI
+    </p>
+</div>
+</body>
+</html>

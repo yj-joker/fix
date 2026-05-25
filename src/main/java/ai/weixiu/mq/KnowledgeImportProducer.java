@@ -9,15 +9,6 @@ import org.springframework.stereotype.Component;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * 知识导入 MQ 生产者
- *
- * <p>将耗时的 PDF 解析 + 向量化入库任务发送到 MQ，
- * 由 Python 端异步消费处理。Java 端立即返回任务ID给前端。</p>
- *
- * <p>处理完成后 Python 通过 knowledge.result 队列回传结果，
- * 由 {@link KnowledgeResultListener} 更新数据库状态。</p>
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -28,19 +19,31 @@ public class KnowledgeImportProducer {
     /**
      * 发送知识导入任务
      *
-     * @param taskId   任务唯一标识（Java 端生成，用于前端查询进度）
-     * @param fileUrl  文档路径或 URL
-     * @param fileType 文件类型（pdf/docx/txt）
-     * @param category 全局分类标签（可选）
-     * @param userId   操作用户ID
+     * @param documentId      文档唯一标识（= knowledge_document.document_id）
+     * @param fileUrl         文档预签名 URL
+     * @param fileType        文件类型（pdf/docx/txt）
+     * @param category        全局分类标签（可选）
+     * @param userId          操作用户ID
+     * @param documentVersion 版本标识如 "v1"（可选）
+     * @param deviceType      设备类型（可选）
+     * @param manualType      手册类型（可选）
+     * @param replaceExisting 是否先删除旧版本向量再导入
      */
-    public void sendImportTask(String taskId, String fileUrl, String fileType, String category, Long userId) {
+    public void sendImportTask(String documentId, String fileUrl, String fileType,
+                               String category, Long userId,
+                               String documentVersion, String deviceType,
+                               String manualType, boolean replaceExisting) {
         Map<String, Object> message = new HashMap<>();
-        message.put("taskId", taskId);
+        message.put("taskId", documentId);
         message.put("fileUrl", fileUrl);
         message.put("fileType", fileType);
         message.put("category", category);
         message.put("userId", userId);
+        message.put("documentId", documentId);
+        message.put("documentVersion", documentVersion);
+        message.put("deviceType", deviceType);
+        message.put("manualType", manualType);
+        message.put("replaceExisting", replaceExisting);
         message.put("timestamp", System.currentTimeMillis());
 
         rabbitTemplate.convertAndSend(
@@ -49,6 +52,7 @@ public class KnowledgeImportProducer {
                 message
         );
 
-        log.info("[MQ生产] 知识导入任务已发送, taskId={}, fileUrl={}, fileType={}", taskId, fileUrl, fileType);
+        log.info("[MQ生产] 知识导入任务已发送, documentId={}, fileUrl={}, version={}",
+                documentId, fileUrl, documentVersion);
     }
 }

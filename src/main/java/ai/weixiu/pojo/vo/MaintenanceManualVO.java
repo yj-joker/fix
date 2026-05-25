@@ -42,4 +42,25 @@ public class MaintenanceManualVO {
 
     /** 最近更新时间。 */
     private LocalDateTime updatedAt;
+
+    /** 当前可用版本号。 */
+    private Integer activeVersion;
+
+    /** 最新版本的解析状态：pending/parsing/indexing/ready/failed。 */
+    private String parseStatus;
+
+    /** 最新版本的失败原因（仅 status=failed 时有值）。 */
+    private String parseErrorMessage;
+
+    /** 历史版本总数。 */
+    private Integer totalVersions;
+
+    /** 当前可用版本的入库文本块数。 */
+    private Integer textCount;
+
+    /** 当前可用版本的入库图片数。 */
+    private Integer imageCount;
+
+    /** 当前可用版本的入库表格数。 */
+    private Integer tableCount;
 }

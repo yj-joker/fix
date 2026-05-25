@@ -1,0 +1,237 @@
+package ai.weixiu.service.impl;
+
+import ai.weixiu.common.RedisKey;
+import ai.weixiu.entity.KnowledgeDocument;
+import ai.weixiu.entity.MaintenanceManual;
+import ai.weixiu.enumerate.BucketEnum;
+import ai.weixiu.exceprion.FormatErrorException;
+import ai.weixiu.exceprion.NotFoundException;
+import ai.weixiu.exceprion.NullException;
+import ai.weixiu.mapper.KnowledgeDocumentMapper;
+import ai.weixiu.mapper.MaintenanceManualMapper;
+import ai.weixiu.mq.KnowledgeImportProducer;
+import ai.weixiu.service.KnowledgeDocumentService;
+import ai.weixiu.service.MioIOUpLoadService;
+import ai.weixiu.utils.BaseContext;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+
+@Service
+@Slf4j
+@RequiredArgsConstructor
+public class KnowledgeDocumentServiceImpl
+        extends ServiceImpl<KnowledgeDocumentMapper, KnowledgeDocument>
+        implements KnowledgeDocumentService {
+
+    private static final List<String> FILE_EXTENSIONS = List.of(".pdf", ".doc", ".docx");
+    private static final List<String> FILE_CONTENT_TYPES = List.of(
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/octet-stream"
+    );
+
+    private final MaintenanceManualMapper manualMapper;
+    private final MioIOUpLoadService mioIOUpLoadService;
+    private final KnowledgeImportProducer knowledgeImportProducer;
+    private final RedisTemplate<String, Object> redisTemplate;
+
+    @Override
+    @Transactional
+    public KnowledgeDocument uploadNewVersion(Long manualId, MultipartFile file) {
+        // 1. 校验手册存在
+        MaintenanceManual manual = manualMapper.selectById(manualId);
+        if (manual == null) {
+            throw new NotFoundException("手册不存在");
+        }
+
+        // 2. 校验文件
+        validateFile(file);
+
+        // 3. 计算版本号: 当前最大版本号 + 1
+        Integer maxVersion = baseMapper.selectObjs(
+                new LambdaQueryWrapper<KnowledgeDocument>()
+                        .select(KnowledgeDocument::getVersion)
+                        .eq(KnowledgeDocument::getManualId, manualId)
+                        .orderByDesc(KnowledgeDocument::getVersion)
+                        .last("LIMIT 1")
+        ).stream().findFirst().map(o -> (Integer) o).orElse(0);
+        int newVersion = maxVersion + 1;
+
+        // 4. 上传文件到 MinIO 私有桶
+        String objectName = mioIOUpLoadService.getObjectName(file, BucketEnum.PRIVATE.getName());
+
+        // 5. 创建 knowledge_document 记录
+        Long docId = IdWorker.getId();
+        String documentId = "kdoc_" + docId;
+
+        KnowledgeDocument doc = new KnowledgeDocument();
+        doc.setId(docId);
+        doc.setManualId(manualId);
+        doc.setDocumentId(documentId);
+        doc.setVersion(newVersion);
+        doc.setFileName(file.getOriginalFilename());
+        doc.setFileType(getFileSuffix(file));
+        doc.setFileSize(file.getSize());
+        doc.setMinioObjectName(objectName);
+        doc.setStatus("pending");
+        doc.setTextCount(0);
+        doc.setImageCount(0);
+        doc.setTableCount(0);
+        doc.setCreatedById(BaseContext.getCurrentId());
+        LocalDateTime now = LocalDateTime.now();
+        doc.setCreatedAt(now);
+        doc.setUpdatedAt(now);
+        save(doc);
+
+        // 6. 更新手册状态为"处理中"
+        manual.setStatus(2);
+        manual.setUpdatedAt(now);
+        manualMapper.updateById(manual);
+        evictManualCache(manualId);
+
+        // 7. 生成文件预签名 URL 给 Python 下载
+        String fileUrl = mioIOUpLoadService.getPresignedUrl(objectName, BucketEnum.PRIVATE, 120);
+
+        // 8. 发送 MQ 消息
+        knowledgeImportProducer.sendImportTask(
+                documentId,
+                fileUrl,
+                doc.getFileType().replace(".", ""),
+                null,
+                BaseContext.getCurrentId(),
+                "v" + newVersion,
+                null,
+                null,
+                true
+        );
+
+        log.info("上传新版本: manualId={}, version={}, documentId={}", manualId, newVersion, documentId);
+        return doc;
+    }
+
+    @Override
+    @Transactional
+    public void onParseSuccess(String documentId, Map<String, Object> data) {
+        KnowledgeDocument doc = getByDocumentId(documentId);
+
+        // 更新 knowledge_document
+        doc.setStatus("ready");
+        doc.setTextCount(toInt(data.get("text_count")));
+        doc.setImageCount(toInt(data.get("image_count")));
+        doc.setTableCount(toInt(data.get("table_count")));
+        doc.setUpdatedAt(LocalDateTime.now());
+        updateById(doc);
+
+        // 切换 maintenance_manual 的 active 版本
+        MaintenanceManual manual = manualMapper.selectById(doc.getManualId());
+        if (manual != null) {
+            manual.setActiveDocumentId(doc.getId());
+            manual.setStatus(1);
+            manual.setUpdatedAt(LocalDateTime.now());
+            manualMapper.updateById(manual);
+            evictManualCache(manual.getId());
+        }
+
+        log.info("解析成功: documentId={}, text={}, image={}, table={}",
+                documentId, doc.getTextCount(), doc.getImageCount(), doc.getTableCount());
+    }
+
+    @Override
+    @Transactional
+    public void onParseFailed(String documentId, String errorMessage) {
+        KnowledgeDocument doc = getByDocumentId(documentId);
+
+        doc.setStatus("failed");
+        doc.setErrorMessage(errorMessage);
+        doc.setUpdatedAt(LocalDateTime.now());
+        updateById(doc);
+
+        // 不改 active_document_id，旧版本继续可用
+        // 但如果是首次上传失败（manual 没有 active），把 status 改回 0
+        MaintenanceManual manual = manualMapper.selectById(doc.getManualId());
+        if (manual != null) {
+            if (manual.getActiveDocumentId() == null) {
+                manual.setStatus(0);
+            } else {
+                manual.setStatus(1);
+            }
+            manual.setUpdatedAt(LocalDateTime.now());
+            manualMapper.updateById(manual);
+            evictManualCache(manual.getId());
+        }
+
+        log.error("解析失败: documentId={}, error={}", documentId, errorMessage);
+    }
+
+    @Override
+    public List<KnowledgeDocument> listVersions(Long manualId) {
+        return list(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getManualId, manualId)
+                .orderByDesc(KnowledgeDocument::getVersion));
+    }
+
+    @Override
+    public KnowledgeDocument getLatestVersion(Long manualId) {
+        return getOne(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getManualId, manualId)
+                .orderByDesc(KnowledgeDocument::getVersion)
+                .last("LIMIT 1"));
+    }
+
+    // ===== 内部方法 =====
+
+    private KnowledgeDocument getByDocumentId(String documentId) {
+        KnowledgeDocument doc = getOne(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getDocumentId, documentId));
+        if (doc == null) {
+            throw new NotFoundException("文档版本不存在: " + documentId);
+        }
+        return doc;
+    }
+
+    private void evictManualCache(Long manualId) {
+        redisTemplate.delete(RedisKey.MANUAL_DETAIL + manualId);
+    }
+
+    private void validateFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new NullException("文件不能为空");
+        }
+        String fileSuffix = getFileSuffix(file).toLowerCase(Locale.ROOT);
+        String contentType = file.getContentType();
+        boolean validExtension = FILE_EXTENSIONS.contains(fileSuffix);
+        boolean validContentType = contentType != null
+                && FILE_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT));
+        if (!validExtension || !validContentType) {
+            throw new FormatErrorException("仅支持 pdf、doc、docx 文件");
+        }
+    }
+
+    private String getFileSuffix(MultipartFile file) {
+        String originalFilename = Objects.requireNonNull(file.getOriginalFilename());
+        if (!originalFilename.contains(".")) {
+            throw new FormatErrorException("文件缺少扩展名");
+        }
+        return originalFilename.substring(originalFilename.lastIndexOf("."));
+    }
+
+    private int toInt(Object value) {
+        if (value == null) return 0;
+        if (value instanceof Number) return ((Number) value).intValue();
+        try { return Integer.parseInt(value.toString()); } catch (NumberFormatException e) { return 0; }
+    }
+}

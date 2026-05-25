@@ -1,5 +1,6 @@
 package ai.weixiu.controller;
 
+import ai.weixiu.entity.KnowledgeDocument;
 import ai.weixiu.entity.MaintenanceManual;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.Result;
@@ -13,6 +14,7 @@ import ai.weixiu.pojo.vo.MaintenanceManualReadHeartbeatVO;
 import ai.weixiu.pojo.vo.MaintenanceManualReadStartVO;
 import ai.weixiu.pojo.vo.MaintenanceManualVO;
 import ai.weixiu.enumerate.MaintenanceManualRankType;
+import ai.weixiu.service.KnowledgeDocumentService;
 import ai.weixiu.service.ManualRecommendService;
 import ai.weixiu.service.MaintenanceManualService;
 import ai.weixiu.service.MaintenanceManualRankService;
@@ -51,6 +53,9 @@ public class MaintenanceManualController {
 
     /** 个性化推荐服务。 */
     private final ManualRecommendService manualRecommendService;
+
+    /** 文档版本管理服务。 */
+    private final KnowledgeDocumentService knowledgeDocumentService;
 
     @PostMapping("/save")
     @Operation(summary = "新增维修手册")
@@ -127,5 +132,27 @@ public class MaintenanceManualController {
     public Result<List<MaintenanceManualRankVO>> rank(@RequestParam(defaultValue = "day") String type,
                                                       @RequestParam(defaultValue = "10") Integer limit) {
         return Result.success(maintenanceManualRankService.getRankList(MaintenanceManualRankType.parse(type), limit));
+    }
+
+    // ===== 文档版本管理 =====
+
+    @PostMapping("/{id}/upload-version")
+    @Operation(summary = "上传新版本文档")
+    public Result<KnowledgeDocument> uploadVersion(@PathVariable Long id,
+                                                   @RequestParam("file") MultipartFile file) {
+        return Result.success(knowledgeDocumentService.uploadNewVersion(id, file));
+    }
+
+    @GetMapping("/{id}/versions")
+    @Operation(summary = "查询手册的所有版本")
+    public Result<List<KnowledgeDocument>> listVersions(@PathVariable Long id) {
+        return Result.success(knowledgeDocumentService.listVersions(id));
+    }
+
+    @GetMapping("/{id}/parse-status")
+    @Operation(summary = "查询最新版本解析状态")
+    public Result<KnowledgeDocument> parseStatus(@PathVariable Long id) {
+        KnowledgeDocument latest = knowledgeDocumentService.getLatestVersion(id);
+        return Result.success(latest);
     }
 }

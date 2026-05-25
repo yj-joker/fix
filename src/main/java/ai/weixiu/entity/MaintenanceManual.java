@@ -73,6 +73,11 @@ public class MaintenanceManual implements Serializable {
     private Integer status;
 
     /**
+     * 当前可用版本的 knowledge_document.id
+     */
+    private Long activeDocumentId;
+
+    /**
      * 上传人ID
      */
     private Long createdById;

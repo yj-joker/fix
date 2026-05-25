@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>百度语音识别 - 流程图 & 方法说明</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container { max-width: 1100px; margin: 0 auto; }
+
+        h1 {
+            text-align: center;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #64748b;
+            font-size: 14px;
+            margin-bottom: 48px;
+        }
+
+        /* ========== 流程图 ========== */
+        .flow-section { margin-bottom: 60px; }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 28px;
+            padding-left: 14px;
+            border-left: 3px solid #60a5fa;
+        }
+
+        .flowchart {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+
+        .flow-node {
+            position: relative;
+            width: 420px;
+            border-radius: 12px;
+            padding: 18px 22px;
+            text-align: center;
+            font-size: 14px;
+            line-height: 1.6;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .flow-node:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+
+        .flow-node .node-title {
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 4px;
+        }
+
+        .flow-node .node-detail {
+            font-size: 12.5px;
+            opacity: 0.8;
+        }
+
+        .flow-node .node-class {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-top: 6px;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+        }
+
+        /* node colors */
+        .node-entry    { background: #1e3a5f; border: 1px solid #2563eb; }
+        .node-entry .node-class { background: #1e40af; color: #93c5fd; }
+
+        .node-validate { background: #3b1f4e; border: 1px solid #7c3aed; }
+        .node-validate .node-class { background: #5b21b6; color: #c4b5fd; }
+
+        .node-ffmpeg   { background: #1a3a2a; border: 1px solid #16a34a; }
+        .node-ffmpeg .node-class { background: #166534; color: #86efac; }
+
+        .node-token    { background: #3b2f1a; border: 1px solid #ca8a04; }
+        .node-token .node-class { background: #854d0e; color: #fde68a; }
+
+        .node-asr      { background: #1e3a5f; border: 1px solid #0ea5e9; }
+        .node-asr .node-class { background: #0c4a6e; color: #7dd3fc; }
+
+        .node-result   { background: #2d1a1a; border: 1px solid #ef4444; }
+        .node-result .node-class { background: #991b1b; color: #fca5a5; }
+
+        .node-return   { background: #1a2e1a; border: 1px solid #22c55e; }
+        .node-return .node-class { background: #14532d; color: #86efac; }
+
+        .node-cleanup  { background: #2a2a2a; border: 1px solid #71717a; }
+        .node-cleanup .node-class { background: #3f3f46; color: #a1a1aa; }
+
+        /* decision diamond */
+        .flow-decision {
+            width: 320px;
+            padding: 14px 20px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            background: #312e3a;
+            border: 2px dashed #a78bfa;
+            color: #c4b5fd;
+        }
+
+        /* arrows */
+        .flow-arrow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 36px;
+            position: relative;
+        }
+
+        .flow-arrow::before {
+            content: '';
+            width: 2px;
+            height: 28px;
+            background: #475569;
+        }
+
+        .flow-arrow::after {
+            content: '';
+            width: 0; height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 8px solid #475569;
+        }
+
+        .arrow-label {
+            position: absolute;
+            right: -80px;
+            top: 6px;
+            font-size: 11px;
+            color: #94a3b8;
+            white-space: nowrap;
+        }
+
+        .arrow-label.left {
+            right: auto;
+            left: -80px;
+        }
+
+        /* branch row */
+        .branch-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 30px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .branch-row .branch-path {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+
+        .branch-label {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .branch-error {
+            width: 260px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 13px;
+            background: #2d1a1a;
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+        }
+
+        /* ========== 方法卡片 ========== */
+        .methods-section { margin-bottom: 60px; }
+
+        .method-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+
+        .method-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 22px 26px;
+            transition: border-color 0.2s;
+        }
+
+        .method-card:hover { border-color: #60a5fa; }
+
+        .method-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .method-name {
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 15px;
+            font-weight: 700;
+            color: #93c5fd;
+        }
+
+        .method-badge {
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .badge-public  { background: #14532d; color: #86efac; }
+        .badge-private { background: #3f3f46; color: #a1a1aa; }
+        .badge-sync    { background: #854d0e; color: #fde68a; }
+
+        .method-sig {
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 12px;
+            background: #0f172a;
+            padding: 8px 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+
+        .method-desc { font-size: 13.5px; line-height: 1.7; color: #cbd5e1; }
+
+        .method-desc strong { color: #f8fafc; }
+
+        .method-desc ul {
+            margin: 8px 0 0 20px;
+        }
+
+        .method-desc li { margin-bottom: 4px; }
+
+        .tag-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+
+        .tag {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 6px;
+            background: #1e1e2e;
+            border: 1px solid #334155;
+            color: #94a3b8;
+        }
+
+        /* ========== 类关系 ========== */
+        .class-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .class-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px 24px;
+        }
+
+        .class-card h3 {
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 15px;
+            color: #a78bfa;
+            margin-bottom: 6px;
+        }
+
+        .class-card .pkg {
+            font-size: 11px;
+            color: #64748b;
+            margin-bottom: 12px;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+        }
+
+        .class-card p { font-size: 13px; line-height: 1.6; }
+
+        .field-list {
+            margin-top: 10px;
+            list-style: none;
+        }
+
+        .field-list li {
+            font-size: 12.5px;
+            padding: 4px 0;
+            border-bottom: 1px solid #1e293b;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            color: #94a3b8;
+        }
+
+        .field-list li span { color: #60a5fa; }
+
+        /* ========== 响应式 ========== */
+        @media (max-width: 600px) {
+            .flow-node { width: 95%; }
+            .flow-decision { width: 85%; }
+            .branch-row { flex-direction: column; align-items: center; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <h1>百度语音识别（ASR）接口流程</h1>
+    <p class="subtitle">VoiceToTextUtils.java &mdash; 从音频上传到文字返回的完整链路</p>
+
+    <!-- ==================== 流程图 ==================== -->
+    <section class="flow-section">
+        <h2 class="section-title">调用流程图</h2>
+
+        <div class="flowchart">
+
+            <!-- 1. 入口 -->
+            <div class="flow-node node-entry">
+                <div class="node-title">1. 前端上传音频文件</div>
+                <div class="node-detail">POST /weixiu/ai/transcribe (MultipartFile)</div>
+                <div class="node-class">AiController.transcribeByBaiDu()</div>
+            </div>
+            <div class="flow-arrow"></div>
+
+            <!-- 2. Service 委托 -->
+            <div class="flow-node node-entry">
+                <div class="node-title">2. Service 层委托</div>
+                <div class="node-detail">直接转发给工具类处理</div>
+                <div class="node-class">AiServiceImpl.getStringByVoiceViaBaidu()</div>
+            </div>
+            <div class="flow-arrow"></div>
+
+            <!-- 3. 校验 -->
+            <div class="flow-node node-validate">
+                <div class="node-title">3. 校验音频文件</div>
+                <div class="node-detail">检查：非空 &rarr; 大小 &le; 10MB &rarr; 后缀白名单<br>(mp3/wav/webm/m4a/mp4/ogg/amr/pcm)</div>
+                <div class="node-class">validateFile()</div>
+            </div>
+            <div class="flow-arrow">
+                <span class="arrow-label">校验通过</span>
+            </div>
+
+            <!-- 4. 落盘 -->
+            <div class="flow-node node-ffmpeg">
+                <div class="node-title">4. 写入临时文件</div>
+                <div class="node-detail">MultipartFile &rarr; 临时文件 upload-asr-xxx.{ext}</div>
+                <div class="node-class">Files.createTempFile() + Files.copy()</div>
+            </div>
+            <div class="flow-arrow"></div>
+
+            <!-- 5. FFmpeg -->
+            <div class="flow-node node-ffmpeg">
+                <div class="node-title">5. FFmpeg 转码为 PCM</div>
+                <div class="node-detail">
+                    任意音频 &rarr; PCM 16-bit 单声道 16kHz<br>
+                    超时保护：30秒未完成则强制终止
+                </div>
+                <div class="node-class">convertToPcm()</div>
+            </div>
+            <div class="flow-arrow"></div>
+
+            <!-- 6. Token -->
+            <div class="flow-node node-token">
+                <div class="node-title">6. 获取百度 Access Token</div>
+                <div class="node-detail">
+                    优先使用缓存 Token（提前1小时刷新）<br>
+                    POST https://aip.baidubce.com/oauth/2.0/token<br>
+                    grant_type=client_credentials
+                </div>
+                <div class="node-class">getAccessToken()</div>
+            </div>
+            <div class="flow-arrow"></div>
+
+            <!-- 7. ASR -->
+            <div class="flow-node node-asr">
+                <div class="node-title">7. 调用百度 ASR 接口</div>
+                <div class="node-detail">
+                    POST https://vop.baidu.com/server_api<br>
+                    Content-Type: audio/pcm;rate=16000<br>
+                    Body: PCM 字节流
+                </div>
+                <div class="node-class">asrClient.post() &rarr; BaiDuAsrDTO</div>
+            </div>
+            <div class="flow-arrow"></div>
+
+            <!-- 8. 判断 -->
+            <div class="flow-decision">err_no == 0 ?</div>
+
+            <!-- 分支 -->
+            <div style="height: 16px;"></div>
+            <div class="branch-row">
+                <div class="branch-path">
+                    <div class="branch-label" style="color:#86efac;">&#10003; err_no == 0</div>
+                    <div class="flow-node node-return" style="width:280px;">
+                        <div class="node-title">8a. 返回识别文本</div>
+                        <div class="node-detail">result 数组拼接为完整字符串</div>
+                        <div class="node-class">String.join("", result)</div>
+                    </div>
+                </div>
+                <div class="branch-path">
+                    <div class="branch-label" style="color:#fca5a5;">&#10007; err_no != 0</div>
+                    <div class="branch-error">
+                        <strong>8b. 抛出异常</strong><br>
+                        "百度语音识别失败：" + errMsg
+                    </div>
+                </div>
+            </div>
+
+            <div style="height: 20px;"></div>
+            <div class="flow-arrow"></div>
+
+            <!-- 9. 清理 -->
+            <div class="flow-node node-cleanup">
+                <div class="node-title">9. finally：清理临时文件</div>
+                <div class="node-detail">删除 upload-asr-xxx.{ext} 和 baidu-asr-xxx.pcm</div>
+                <div class="node-class">deleteQuietly(inputFile) + deleteQuietly(pcmFile)</div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ==================== 涉及类 ==================== -->
+    <section class="methods-section">
+        <h2 class="section-title">涉及的类</h2>
+
+        <div class="class-grid">
+            <div class="class-card">
+                <h3>VoiceToTextUtils</h3>
+                <div class="pkg">ai.weixiu.utils</div>
+                <p>核心工具类，包含音频转码、Token 管理、ASR 调用的完整逻辑。持有两个 WebClient 实例分别访问不同域名。</p>
+                <ul class="field-list">
+                    <li><span>tokenClient</span> &mdash; aip.baidubce.com</li>
+                    <li><span>asrClient</span> &mdash; vop.baidu.com</li>
+                    <li><span>cachedToken</span> &mdash; Token 缓存</li>
+                    <li><span>expireAtMillis</span> &mdash; Token 过期时间戳</li>
+                </ul>
+            </div>
+
+            <div class="class-card">
+                <h3>BaiDuConfigurationProperties</h3>
+                <div class="pkg">ai.weixiu.entity</div>
+                <p>配置类，绑定 application.yml 中 <code>baidu.speech.*</code> 前缀。</p>
+                <ul class="field-list">
+                    <li><span>apiKey</span> / <span>secretKey</span> &mdash; OAuth 凭据</li>
+                    <li><span>cuid</span> &mdash; 设备标识</li>
+                    <li><span>devPid</span> &mdash; 语言模型ID（1537=普通话）</li>
+                    <li><span>rate</span> &mdash; 采样率（默认16000）</li>
+                    <li><span>maxUploadMb</span> &mdash; 上传大小限制</li>
+                </ul>
+            </div>
+
+            <div class="class-card">
+                <h3>BaiDuAsrDTO</h3>
+                <div class="pkg">ai.weixiu.pojo.dto</div>
+                <p>百度 ASR 接口响应体映射。</p>
+                <ul class="field-list">
+                    <li><span>errNo</span> &mdash; 错误码（0=成功）</li>
+                    <li><span>errMsg</span> &mdash; 错误信息</li>
+                    <li><span>sn</span> &mdash; 唯一序列号</li>
+                    <li><span>result</span> &mdash; 识别结果列表</li>
+                </ul>
+            </div>
+
+            <div class="class-card">
+                <h3>BaiDuTokenDTO</h3>
+                <div class="pkg">ai.weixiu.pojo.dto</div>
+                <p>百度 OAuth 2.0 Token 响应体映射。</p>
+                <ul class="field-list">
+                    <li><span>accessToken</span> &mdash; 访问令牌</li>
+                    <li><span>expiresIn</span> &mdash; 有效期（秒）</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================== 方法详解 ==================== -->
+    <section class="methods-section">
+        <h2 class="section-title">方法详解 &mdash; VoiceToTextUtils</h2>
+
+        <div class="method-grid">
+
+            <!-- transcribe -->
+            <div class="method-card">
+                <div class="method-header">
+                    <span class="method-name">transcribe</span>
+                    <span class="method-badge badge-public">public</span>
+                </div>
+                <div class="method-sig">public String transcribe(MultipartFile file)</div>
+                <div class="method-desc">
+                    <strong>主入口方法</strong>，编排整个语音识别流程：
+                    <ul>
+                        <li>调用 <code>validateFile()</code> 校验文件合法性</li>
+                        <li>将 MultipartFile 写入临时文件</li>
+                        <li>调用 <code>convertToPcm()</code> 转码为 PCM 格式</li>
+                        <li>调用 <code>getAccessToken()</code> 获取 Token</li>
+                        <li>通过 <code>asrClient</code> 发送 PCM 数据到百度 ASR</li>
+                        <li>解析响应，拼接识别结果返回</li>
+                        <li><strong>finally 块</strong>无论成功失败都清理临时文件</li>
+                    </ul>
+                </div>
+                <div class="tag-row">
+                    <span class="tag">入口</span>
+                    <span class="tag">HTTP 超时 15s</span>
+                    <span class="tag">自动清理临时文件</span>
+                </div>
+            </div>
+
+            <!-- convertToPcm -->
+            <div class="method-card">
+                <div class="method-header">
+                    <span class="method-name">convertToPcm</span>
+                    <span class="method-badge badge-public">public</span>
+                </div>
+                <div class="method-sig">public Path convertToPcm(Path inputFile)</div>
+                <div class="method-desc">
+                    <strong>音频转码</strong>，调用系统 FFmpeg 将任意格式音频转为百度要求的 PCM 格式：
+                    <ul>
+                        <li>编码：PCM 16-bit 有符号小端（pcm_s16le）</li>
+                        <li>声道：单声道（-ac 1）</li>
+                        <li>采样率：16000 Hz（-ar 16000）</li>
+                        <li>剥离视频轨（-vn）只取第一条音轨（-map 0:a:0）</li>
+                        <li>合并 stderr 到 stdout 防止管道阻塞</li>
+                        <li><strong>30 秒超时</strong>，超时自动 destroyForcibly()</li>
+                    </ul>
+                </div>
+                <div class="tag-row">
+                    <span class="tag">FFmpeg</span>
+                    <span class="tag">超时 30s</span>
+                    <span class="tag">返回临时 .pcm 文件路径</span>
+                </div>
+            </div>
+
+            <!-- getAccessToken -->
+            <div class="method-card">
+                <div class="method-header">
+                    <span class="method-name">getAccessToken</span>
+                    <span class="method-badge badge-public">public</span>
+                    <span class="method-badge badge-sync">synchronized</span>
+                </div>
+                <div class="method-sig">public synchronized String getAccessToken()</div>
+                <div class="method-desc">
+                    <strong>OAuth 2.0 Token 管理</strong>，带缓存和线程安全：
+                    <ul>
+                        <li>优先返回缓存 Token（未过期时直接返回）</li>
+                        <li>Token 过期前 1 小时主动刷新（expiresIn - 3600）</li>
+                        <li>通过 <code>tokenClient</code> 请求 aip.baidubce.com</li>
+                        <li><code>synchronized</code> 保证多线程下只发一次请求</li>
+                        <li>默认有效期 30 天（2592000 秒）</li>
+                    </ul>
+                </div>
+                <div class="tag-row">
+                    <span class="tag">线程安全</span>
+                    <span class="tag">Token 缓存</span>
+                    <span class="tag">HTTP 超时 15s</span>
+                </div>
+            </div>
+
+            <!-- validateFile -->
+            <div class="method-card">
+                <div class="method-header">
+                    <span class="method-name">validateFile</span>
+                    <span class="method-badge badge-private">private</span>
+                </div>
+                <div class="method-sig">private void validateFile(MultipartFile file)</div>
+                <div class="method-desc">
+                    <strong>文件校验</strong>，三重检查：
+                    <ul>
+                        <li><strong>非空检查</strong>：file != null && !file.isEmpty()</li>
+                        <li><strong>大小检查</strong>：不超过 maxUploadMb（默认 10MB）</li>
+                        <li><strong>格式白名单</strong>：mp3 / wav / webm / m4a / mp4 / ogg / amr / pcm</li>
+                    </ul>
+                    校验失败抛出 <code>IllegalArgumentException</code>。
+                </div>
+                <div class="tag-row">
+                    <span class="tag">参数校验</span>
+                    <span class="tag">NPE 防护</span>
+                </div>
+            </div>
+
+            <!-- getSuffix -->
+            <div class="method-card">
+                <div class="method-header">
+                    <span class="method-name">getSuffix</span>
+                    <span class="method-badge badge-private">private</span>
+                </div>
+                <div class="method-sig">private String getSuffix(String filename)</div>
+                <div class="method-desc">
+                    <strong>提取文件后缀名</strong>（含点号），用于创建临时文件和格式校验。
+                    <ul>
+                        <li>输入 <code>"recording.mp3"</code> &rarr; 返回 <code>".mp3"</code></li>
+                        <li>输入 null 或无点号 &rarr; 返回 <code>".audio"</code>（兜底）</li>
+                    </ul>
+                </div>
+                <div class="tag-row">
+                    <span class="tag">工具方法</span>
+                </div>
+            </div>
+
+            <!-- deleteQuietly -->
+            <div class="method-card">
+                <div class="method-header">
+                    <span class="method-name">deleteQuietly</span>
+                    <span class="method-badge badge-private">private</span>
+                </div>
+                <div class="method-sig">private void deleteQuietly(Path path)</div>
+                <div class="method-desc">
+                    <strong>静默删除临时文件</strong>，即使删除失败也不抛异常。
+                    <ul>
+                        <li>null 安全：path 为 null 直接返回</li>
+                        <li>用于 finally 块，确保不影响正常返回值或已有异常</li>
+                    </ul>
+                </div>
+                <div class="tag-row">
+                    <span class="tag">资源清理</span>
+                    <span class="tag">异常吞没</span>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ==================== 调用链 ==================== -->
+    <section class="methods-section">
+        <h2 class="section-title">完整调用链</h2>
+
+        <div class="method-card" style="font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; line-height: 2.2; overflow-x: auto;">
+            <span style="color:#64748b;">// Controller</span><br>
+            AiController.<span style="color:#93c5fd;">transcribeByBaiDu</span>(MultipartFile)<br>
+            &nbsp;&nbsp;<span style="color:#475569;">&darr;</span><br>
+            <span style="color:#64748b;">// Service</span><br>
+            AiServiceImpl.<span style="color:#93c5fd;">getStringByVoiceViaBaidu</span>(MultipartFile)<br>
+            &nbsp;&nbsp;<span style="color:#475569;">&darr;</span><br>
+            <span style="color:#64748b;">// 工具类主方法</span><br>
+            VoiceToTextUtils.<span style="color:#93c5fd;">transcribe</span>(MultipartFile)<br>
+            &nbsp;&nbsp;<span style="color:#475569;">├─</span> <span style="color:#c4b5fd;">validateFile</span>(file) &nbsp;<span style="color:#64748b;">// 校验</span><br>
+            &nbsp;&nbsp;<span style="color:#475569;">├─</span> <span style="color:#86efac;">convertToPcm</span>(inputFile) &nbsp;<span style="color:#64748b;">// FFmpeg 转码</span><br>
+            &nbsp;&nbsp;<span style="color:#475569;">├─</span> <span style="color:#fde68a;">getAccessToken</span>() &nbsp;<span style="color:#64748b;">// OAuth Token（带缓存）</span><br>
+            &nbsp;&nbsp;<span style="color:#475569;">├─</span> <span style="color:#7dd3fc;">asrClient.post()</span> &nbsp;<span style="color:#64748b;">// 百度 ASR 识别</span><br>
+            &nbsp;&nbsp;<span style="color:#475569;">└─</span> <span style="color:#a1a1aa;">deleteQuietly</span>() &times; 2 &nbsp;<span style="color:#64748b;">// finally 清理</span>
+        </div>
+    </section>
+
+</div>
+</body>
+</html>
