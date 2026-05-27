@@ -170,3 +170,60 @@ ALTER TABLE maintenance_manual MODIFY COLUMN file_name VARCHAR(255) NULL COMMENT
 ALTER TABLE maintenance_manual MODIFY COLUMN file_type VARCHAR(20) NULL COMMENT '文件类型（旧数据兼容）';
 ALTER TABLE maintenance_manual MODIFY COLUMN file_size BIGINT NULL DEFAULT 0 COMMENT '文件大小（旧数据兼容）';
 ALTER TABLE maintenance_manual MODIFY COLUMN minio_object_name VARCHAR(500) NULL COMMENT 'MinIO对象名（旧数据兼容）';
+
+
+-- =============================================
+-- 检修任务 + 步骤执行记录
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS `maintenance_task` (
+                                                  `id`               BIGINT       NOT NULL COMMENT '雪花ID',
+                                                  `task_number`      VARCHAR(30)  NOT NULL COMMENT '任务编号 MT-yyyyMMdd-xxx',
+                                                  `device_id`        VARCHAR(64)  DEFAULT NULL COMMENT '设备ID（图谱节点ID）',
+                                                  `device_name`      VARCHAR(200) DEFAULT NULL COMMENT '设备名称',
+                                                  `fault_description` TEXT        NOT NULL COMMENT '故障描述',
+                                                  `urgency_level`    INT          NOT NULL DEFAULT 1 COMMENT '紧急等级 0低 1普通 2紧急',
+                                                  `report_images`    JSON         DEFAULT NULL COMMENT '报修图片URL列表',
+                                                  `status`           VARCHAR(30)  NOT NULL DEFAULT 'CREATED' COMMENT '状态: CREATED/GENERATING/GENERATED/GENERATE_FAILED/EXECUTING/CLOSED',
+                                                  `step_count`       INT          NOT NULL DEFAULT 0 COMMENT '步骤总数（冗余）',
+                                                  `reporter_id`      BIGINT       DEFAULT NULL COMMENT '报修人ID',
+                                                  `created_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                                  `updated_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                                  PRIMARY KEY (`id`),
+                                                  UNIQUE KEY `uk_task_number` (`task_number`),
+                                                  KEY `idx_status` (`status`),
+                                                  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='检修任务';
+
+CREATE TABLE IF NOT EXISTS `task_step_record` (
+                                                  `id`            BIGINT       NOT NULL COMMENT '雪花ID',
+                                                  `task_id`       BIGINT       NOT NULL COMMENT '所属任务ID',
+                                                  `sort_order`    INT          NOT NULL COMMENT '步骤序号（从1开始）',
+                                                  `title`         VARCHAR(200) NOT NULL COMMENT '步骤标题',
+                                                  `content`       TEXT         DEFAULT NULL COMMENT '步骤详细说明',
+                                                  `safety_note`   TEXT         DEFAULT NULL COMMENT '安全注意事项',
+                                                  `require_photo` TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否要求拍照',
+                                                  `require_note`  TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否要求备注',
+                                                  `estimated_minutes` INT      DEFAULT NULL COMMENT '预估耗时(分钟)',
+                                                  `status`        VARCHAR(20)  NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/COMPLETED/SKIPPED',
+                                                  `images`        JSON         DEFAULT NULL COMMENT '工人上传的照片',
+                                                  `note`          TEXT         DEFAULT NULL COMMENT '工人填写的备注',
+                                                  `completed_at`  DATETIME     DEFAULT NULL COMMENT '完成时间',
+                                                  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                                  PRIMARY KEY (`id`),
+                                                  KEY `idx_task_id` (`task_id`),
+                                                  KEY `idx_task_order` (`task_id`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='任务步骤执行记录';
+
+-- =============================================
+-- AI 验收 + 置信度人工审核 扩展字段
+-- =============================================
+
+ALTER TABLE task_step_record
+    ADD COLUMN `ai_pass`       TINYINT(1)   DEFAULT NULL COMMENT 'AI验证是否通过',
+    ADD COLUMN `ai_confidence` DECIMAL(4,3) DEFAULT NULL COMMENT 'AI验证置信度(0-1)',
+    ADD COLUMN `ai_reason`     TEXT         DEFAULT NULL COMMENT 'AI验证理由',
+    ADD COLUMN `review_status` VARCHAR(20)  DEFAULT NULL COMMENT '人工审核状态: PENDING_REVIEW/APPROVED/REJECTED',
+    ADD COLUMN `reviewer_id`   BIGINT       DEFAULT NULL COMMENT '审核人ID',
+    ADD COLUMN `review_note`   TEXT         DEFAULT NULL COMMENT '审核备注',
+    ADD COLUMN `reviewed_at`   DATETIME     DEFAULT NULL COMMENT '审核时间';

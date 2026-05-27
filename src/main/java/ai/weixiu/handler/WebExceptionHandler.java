@@ -59,6 +59,12 @@ public class WebExceptionHandler {
         return Result.error("400", e.getMessage());
     }
 
+    @ExceptionHandler(TaskStateException.class)
+    public Result handler(TaskStateException e) {
+        log.info(e.getMessage());
+        return Result.error("409", e.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public Result handleException(Exception e) {
         return Result.error("500", e.getMessage());

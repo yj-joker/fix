@@ -2,6 +2,7 @@ package ai.weixiu.utils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import ai.weixiu.config.MinioProperties;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import lombok.extern.slf4j.Slf4j;
@@ -40,26 +41,35 @@ import java.util.Map;
 public class MultimodalEmbeddingUtils {
 
     private final WebClient webClient;
+    private final WebClient httpDownloadClient;
     private final ObjectMapper objectMapper;
     private final MinioClient minioClient;
+    private final URI minioEndpointUri;
 
     private static final Duration TIMEOUT = Duration.ofSeconds(120);
 
     public MultimodalEmbeddingUtils(
             @Value("${ai.python-service-url:http://localhost:8000}") String pythonServiceUrl,
             ObjectMapper objectMapper,
-            MinioClient minioClient
+            MinioClient minioClient,
+            MinioProperties minioProperties
     ) {
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
                 .responseTimeout(Duration.ofSeconds(120));
+        ReactorClientHttpConnector connector = new ReactorClientHttpConnector(httpClient);
         this.webClient = WebClient.builder()
                 .baseUrl(pythonServiceUrl)
-                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .clientConnector(connector)
+                .codecs(cfg -> cfg.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .build();
+        this.httpDownloadClient = WebClient.builder()
+                .clientConnector(connector)
                 .codecs(cfg -> cfg.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
                 .build();
         this.objectMapper = objectMapper;
         this.minioClient = minioClient;
+        this.minioEndpointUri = URI.create(minioProperties.getEndpoint());
     }
 
     /**
@@ -137,39 +147,68 @@ public class MultimodalEmbeddingUtils {
         List<String> base64List = new ArrayList<>();
         for (String url : imageUrls) {
             try {
-                // 从 URL 中解析 bucket 和 objectName
-                // 格式: http://host:port/bucket/objectName
                 URI uri = URI.create(url);
-                String path = uri.getPath(); // /bucket/objectName
+                String path = uri.getPath();
                 if (path == null || path.length() <= 1) {
                     log.warn("图片 URL 路径为空，跳过: {}", url);
                     continue;
                 }
-                int firstSlash = path.indexOf('/', 1);
-                if (firstSlash < 0 || firstSlash + 1 >= path.length()) {
-                    log.warn("图片 URL 格式不正确（缺少 bucket/objectName），跳过: {}", url);
-                    continue;
-                }
-                String bucket = path.substring(1, firstSlash);
-                String objectName = path.substring(firstSlash + 1);
 
-                try (InputStream is = minioClient.getObject(
-                        GetObjectArgs.builder()
-                                .bucket(bucket)
-                                .object(objectName)
-                                .build()
-                )) {
-                    byte[] bytes = is.readAllBytes();
-                    String contentType = guessContentType(objectName);
-                    String b64 = Base64.getEncoder().encodeToString(bytes);
-                    base64List.add("data:" + contentType + ";base64," + b64);
-                    log.debug("图片转 base64 成功: {} ({}KB)", objectName, bytes.length / 1024);
+                byte[] bytes;
+                String objectName;
+
+                if (isLocalMinio(uri)) {
+                    // 本地 MinIO：通过 MinioClient SDK 下载
+                    int firstSlash = path.indexOf('/', 1);
+                    if (firstSlash < 0 || firstSlash + 1 >= path.length()) {
+                        log.warn("图片 URL 格式不正确（缺少 bucket/objectName），跳过: {}", url);
+                        continue;
+                    }
+                    String bucket = path.substring(1, firstSlash);
+                    objectName = path.substring(firstSlash + 1);
+
+                    try (InputStream is = minioClient.getObject(
+                            GetObjectArgs.builder()
+                                    .bucket(bucket)
+                                    .object(objectName)
+                                    .build()
+                    )) {
+                        bytes = is.readAllBytes();
+                    }
+                    log.debug("MinIO 下载成功: bucket={}, object={} ({}KB)", bucket, objectName, bytes.length / 1024);
+                } else {
+                    // 外部 URL：HTTP GET 直接下载
+                    objectName = path.substring(path.lastIndexOf('/') + 1);
+                    log.debug("非本地 MinIO URL，尝试 HTTP 下载: {}", url);
+                    bytes = httpDownloadClient.get()
+                            .uri(uri)
+                            .retrieve()
+                            .bodyToMono(byte[].class)
+                            .block(Duration.ofSeconds(15));
+                    if (bytes == null || bytes.length == 0) {
+                        log.warn("HTTP 下载图片为空，跳过: {}", url);
+                        continue;
+                    }
+                    log.debug("HTTP 下载成功: {} ({}KB)", objectName, bytes.length / 1024);
                 }
+
+                String contentType = guessContentType(objectName);
+                String b64 = Base64.getEncoder().encodeToString(bytes);
+                base64List.add("data:" + contentType + ";base64," + b64);
+
             } catch (Exception e) {
                 log.warn("图片下载转 base64 失败，跳过: {} 错误={}", url, e.getMessage());
             }
         }
         return base64List;
+    }
+
+    private boolean isLocalMinio(URI imageUri) {
+        String imgHost = imageUri.getHost();
+        int imgPort = imageUri.getPort();
+        String minioHost = minioEndpointUri.getHost();
+        int minioPort = minioEndpointUri.getPort();
+        return minioHost.equalsIgnoreCase(imgHost) && minioPort == imgPort;
     }
 
     private static String guessContentType(String objectName) {

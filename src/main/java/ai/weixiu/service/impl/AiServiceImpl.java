@@ -86,11 +86,11 @@ public class AiServiceImpl implements AiService {
         // 将历史信息、偏好和待办事项拼接并设置到aiChatRequest
         finalAiContext(aiChatRequest, aiSession.getId(), userId, memoryMessages);
 
-        // ===== 图片URL转Base64（解决云端LLM无法访问本地MinIO的问题）=====
+        // 图片URL转Base64（云端LLM无法访问localhost MinIO，需要转为内联base64）
         if (aiChatRequest.getImages() != null && !aiChatRequest.getImages().isEmpty()) {
             List<String> base64Images = multimodalEmbeddingUtils.downloadImagesToBase64(aiChatRequest.getImages());
             aiChatRequest.setImages(base64Images);
-            log.info("已将{}张MinIO图片转为Base64", base64Images.size());
+            log.info("已将{}张图片转为Base64", base64Images.size());
         }
 
         log.info("最终消息: {}", aiChatRequest.getUserMessage());

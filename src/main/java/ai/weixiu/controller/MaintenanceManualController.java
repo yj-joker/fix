@@ -95,6 +95,7 @@ public class MaintenanceManualController {
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询维修手册")
     /** 查询详情页数据，其中 fileUrl 是当次请求生成的 MinIO 临时访问地址。 */
+    //TODO 根据 Ids 查询维修手册 可以传递多个id返回集合
     public Result<MaintenanceManualVO> getById(@PathVariable Long id) {
         return Result.success(maintenanceManualService.getManualDetailById(id));
     }

@@ -14,11 +14,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
 public class SessionInterceptor implements HandlerInterceptor {
+    private static final List<String> INTERNAL_PREFIXES = List.of(
+            "/weixiu/memory/",
+            "/weixiu/path/",
+            "/weixiu/device/"
+    );
+
     private final RedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final String internalToken;
@@ -44,9 +51,10 @@ public class SessionInterceptor implements HandlerInterceptor {
         }
 
         // 内部服务接口：通过共享密钥鉴权（Python 等内部服务携带 X-Internal-Token 请求头）
-        if (uri.startsWith("/weixiu/memory/")) {
+        if (INTERNAL_PREFIXES.stream().anyMatch(uri::startsWith)) {
             String token = request.getHeader("X-Internal-Token");
             if (internalToken.equals(token)) {
+                log.info("内部服务调用放行: {}", uri);
                 return true;
             }
             log.warn("内部接口鉴权失败，拦截: {}", uri);

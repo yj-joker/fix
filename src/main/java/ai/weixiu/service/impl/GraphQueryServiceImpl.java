@@ -59,6 +59,9 @@ public class GraphQueryServiceImpl implements GraphQueryService {
             return emptyResult(safePage, safeSize);
         }
 
+        log.info("诊断路径查询开始: keyword={}, hasFault={}, hasComp={}, hasImages={}",
+                query.getKeyword(), hasFaultDesc, hasCompDesc, hasImages);
+
         // ===== 1. 设备模糊匹配（top 10）=====
         List<String> deviceIds = null;
         if (hasKeyword) {
@@ -66,6 +69,8 @@ public class GraphQueryServiceImpl implements GraphQueryService {
             if (!devices.isEmpty()) {
                 deviceIds = devices.stream().map(DeviceVO::getId).toList();
             }
+            log.debug("设备模糊匹配: keyword={}, 命中={}",
+                    query.getKeyword(), deviceIds != null ? deviceIds.size() : 0);
         }
 
         // ===== 2. 故障文本向量检索（只搜 fault 索引）=====
@@ -75,6 +80,7 @@ public class GraphQueryServiceImpl implements GraphQueryService {
             for (FaultVO f : faults) {
                 faultScoreMap.merge(f.getId(), f.getScore(), Math::max);
             }
+            log.debug("故障向量召回: desc={}, 命中={}", query.getFaultDescription(), faults.size());
         }
 
         // ===== 3. 部件文本向量检索（只搜 component 索引）=====
@@ -84,6 +90,7 @@ public class GraphQueryServiceImpl implements GraphQueryService {
             for (ComponentVO c : components) {
                 compScoreMap.merge(c.getId(), c.getScore(), Math::max);
             }
+            log.debug("部件向量召回: desc={}, 命中={}", query.getComponentDescription(), components.size());
         }
 
         // ===== 4. 图片向量检索（纯图片，不融合文字，搜两个多模态索引）=====
@@ -98,6 +105,7 @@ public class GraphQueryServiceImpl implements GraphQueryService {
                 for (ComponentVO c : imgComps) {
                     compScoreMap.merge(c.getId(), c.getScore(), Math::max);
                 }
+                log.debug("图片向量召回: 故障+={}, 部件+={}", imgFaults.size(), imgComps.size());
             }
         }
 

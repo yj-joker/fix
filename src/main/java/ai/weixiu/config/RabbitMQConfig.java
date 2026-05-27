@@ -26,6 +26,19 @@ public class RabbitMQConfig {
     public static final String KNOWLEDGE_RESULT_QUEUE = "knowledge.result.queue";
     public static final String KNOWLEDGE_RESULT_KEY = "knowledge.result";
 
+    // ===== 检修任务队列 =====
+    public static final String TASK_EXCHANGE = "task.exchange";
+    public static final String TASK_GENERATE_QUEUE = "task.generate.queue";
+    public static final String TASK_GENERATE_KEY = "task.generate";
+    public static final String TASK_GENERATE_RESULT_QUEUE = "task.generate.result.queue";
+    public static final String TASK_GENERATE_RESULT_KEY = "task.generate.result";
+
+    // ===== 步骤AI验证队列 =====
+    public static final String TASK_STEP_VERIFY_QUEUE = "task.step.verify.queue";
+    public static final String TASK_STEP_VERIFY_KEY = "task.step.verify";
+    public static final String TASK_STEP_VERIFY_RESULT_QUEUE = "task.step.verify.result.queue";
+    public static final String TASK_STEP_VERIFY_RESULT_KEY = "task.step.verify.result";
+
     public static final String REALTIME_KEY = "memory.realtime";
     public static final String CONSOLIDATE_KEY = "memory.consolidate";
     public static final String RESULT_KEY = "memory.result";
@@ -126,6 +139,65 @@ public class RabbitMQConfig {
     @Bean
     public Binding knowledgeResultBinding() {
         return BindingBuilder.bind(knowledgeResultQueue()).to(knowledgeExchange()).with(KNOWLEDGE_RESULT_KEY);
+    }
+
+    // ===== Task Generate Exchange & Queues =====
+
+    @Bean
+    public TopicExchange taskExchange() {
+        return new TopicExchange(TASK_EXCHANGE, true, false);
+    }
+
+    /** 检修步骤生成队列（TTL 5min，LLM推理耗时） */
+    @Bean
+    public Queue taskGenerateQueue() {
+        return QueueBuilder.durable(TASK_GENERATE_QUEUE)
+                .withArgument("x-message-ttl", 300_000)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .build();
+    }
+
+    @Bean
+    public Binding taskGenerateBinding() {
+        return BindingBuilder.bind(taskGenerateQueue()).to(taskExchange()).with(TASK_GENERATE_KEY);
+    }
+
+    /** 检修步骤生成结果队列（Python → Java） */
+    @Bean
+    public Queue taskGenerateResultQueue() {
+        return QueueBuilder.durable(TASK_GENERATE_RESULT_QUEUE).build();
+    }
+
+    @Bean
+    public Binding taskGenerateResultBinding() {
+        return BindingBuilder.bind(taskGenerateResultQueue()).to(taskExchange()).with(TASK_GENERATE_RESULT_KEY);
+    }
+
+    // ===== Step Verify Exchange & Queues =====
+
+    /** 步骤AI验证队列（TTL 5min，多模态LLM验证耗时） */
+    @Bean
+    public Queue stepVerifyQueue() {
+        return QueueBuilder.durable(TASK_STEP_VERIFY_QUEUE)
+                .withArgument("x-message-ttl", 300_000)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .build();
+    }
+
+    @Bean
+    public Binding stepVerifyBinding() {
+        return BindingBuilder.bind(stepVerifyQueue()).to(taskExchange()).with(TASK_STEP_VERIFY_KEY);
+    }
+
+    /** 步骤AI验证结果队列（Python → Java） */
+    @Bean
+    public Queue stepVerifyResultQueue() {
+        return QueueBuilder.durable(TASK_STEP_VERIFY_RESULT_QUEUE).build();
+    }
+
+    @Bean
+    public Binding stepVerifyResultBinding() {
+        return BindingBuilder.bind(stepVerifyResultQueue()).to(taskExchange()).with(TASK_STEP_VERIFY_RESULT_KEY);
     }
 
     // ===== Serialization =====
