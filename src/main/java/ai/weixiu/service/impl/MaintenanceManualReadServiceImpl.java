@@ -171,7 +171,7 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
             // 标记写入成功后，后续会话仍可继续上报阅读时长，
             // 但当天不会再次把同一用户对同一手册的阅读写入排行榜。
             Boolean countClaimed = stringRedisTemplate.opsForValue()
-                    .setIfAbsent(countedKey, "1", currentDayTtl());
+                    .setIfAbsent(countedKey, "1", Duration.ofDays(365));
             if (Boolean.TRUE.equals(countClaimed)) {
                 try {
                     maintenanceManualRankService.increaseRank(manualId);
@@ -218,9 +218,9 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
         return RedisKey.MANUAL_READ_DURATION + userId + ":" + manualId + ":" + currentDay();
     }
 
-    /** 拼装当天已计榜标记 key。 */
+    /** 拼装已计榜标记 key（终身一次，不含日期）。 */
     private String getCountedKey(Long userId, Long manualId) {
-        return RedisKey.MANUAL_READ_COUNTED + userId + ":" + manualId + ":" + currentDay();
+        return RedisKey.MANUAL_READ_COUNTED + userId + ":" + manualId;
     }
 
     /** 获取业务时区下的当前日期文本，作为按天统计 key 的组成部分。 */

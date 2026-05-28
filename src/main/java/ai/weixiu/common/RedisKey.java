@@ -37,8 +37,8 @@ public class RedisKey {
         public static final String MANUAL_READ_DURATION = "Maintenance:Manual:Read:Duration:";
 
         /**
-         * 用户当天已为某本手册计入排行榜的标记前缀。
-         * <p>该标记通过 setIfAbsent 抢占，保证同一天只为排行榜增加一次分值。</p>
+         * 用户已为某本手册计入排行榜的标记前缀（终身一次）。
+         * <p>该标记通过 setIfAbsent 抢占，保证同一用户对同一手册只为排行榜增加一次分值。</p>
          */
         public static final String MANUAL_READ_COUNTED = "Maintenance:Manual:Read:Counted:";
 

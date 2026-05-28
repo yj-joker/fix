@@ -20,10 +20,10 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 public class SessionInterceptor implements HandlerInterceptor {
-    private static final List<String> INTERNAL_PREFIXES = List.of(
+    /** 纯内部前缀：只允许 Python 通过内部 token 访问，不允许用户 session 访问 */
+    private static final List<String> INTERNAL_ONLY_PREFIXES = List.of(
             "/weixiu/memory/",
-            "/weixiu/path/",
-            "/weixiu/device/"
+            "/weixiu/path/"
     );
 
     private final RedisTemplate redisTemplate;
@@ -50,13 +50,15 @@ public class SessionInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        // 内部服务接口：通过共享密钥鉴权（Python 等内部服务携带 X-Internal-Token 请求头）
-        if (INTERNAL_PREFIXES.stream().anyMatch(uri::startsWith)) {
-            String token = request.getHeader("X-Internal-Token");
-            if (internalToken.equals(token)) {
-                log.info("内部服务调用放行: {}", uri);
-                return true;
-            }
+        // 任何接口只要携带有效的内部 token 就直接放行（Python 内部服务调用）
+        String token = request.getHeader("X-Internal-Token");
+        if (internalToken.equals(token)) {
+            log.info("内部服务调用放行: {}", uri);
+            return true;
+        }
+
+        // 纯内部前缀：没有有效 token 则直接 403，不允许用户 session 访问
+        if (INTERNAL_ONLY_PREFIXES.stream().anyMatch(uri::startsWith)) {
             log.warn("内部接口鉴权失败，拦截: {}", uri);
             writeJsonResponse(response, Result.error("403", "禁止访问"));
             return false;
