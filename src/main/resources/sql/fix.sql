@@ -227,3 +227,51 @@ ALTER TABLE task_step_record
     ADD COLUMN `reviewer_id`   BIGINT       DEFAULT NULL COMMENT '审核人ID',
     ADD COLUMN `review_note`   TEXT         DEFAULT NULL COMMENT '审核备注',
     ADD COLUMN `reviewed_at`   DATETIME     DEFAULT NULL COMMENT '审核时间';
+
+-- =============================================
+-- 步骤来源溯源 + 生成置信度
+-- =============================================
+
+ALTER TABLE task_step_record
+    ADD COLUMN `sources`              JSON         DEFAULT NULL COMMENT '步骤来源引用(手册/图谱)',
+    ADD COLUMN `generate_confidence`  DECIMAL(4,3) DEFAULT NULL COMMENT '生成置信度(0-1)';
+
+-- =============================================
+-- 标准作业规程 (Phase 1)
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS `standard_procedure` (
+    `id`                BIGINT       NOT NULL COMMENT '雪花ID',
+    `name`              VARCHAR(200) NOT NULL COMMENT '规程名称',
+    `device_type`       VARCHAR(100) DEFAULT NULL COMMENT '设备类型',
+    `maintenance_level` VARCHAR(20)  DEFAULT NULL COMMENT '检修等级: ROUTINE/MINOR/MAJOR',
+    `description`       TEXT         DEFAULT NULL COMMENT '规程说明',
+    `version`           INT          NOT NULL DEFAULT 1 COMMENT '版本号',
+    `status`            VARCHAR(20)  NOT NULL DEFAULT 'DRAFT' COMMENT '状态: DRAFT/PUBLISHED/ARCHIVED',
+    `source_type`       VARCHAR(20)  NOT NULL DEFAULT 'MANUAL_CREATE' COMMENT '来源: MANUAL_CREATE/AI_GENERATE/TASK_PROMOTE',
+    `source_task_id`    BIGINT       DEFAULT NULL COMMENT '源任务ID(TASK_PROMOTE时)',
+    `total_steps`       INT          NOT NULL DEFAULT 0 COMMENT '步骤总数',
+    `created_by`        BIGINT       DEFAULT NULL COMMENT '创建人ID',
+    `created_at`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_device_level` (`device_type`, `maintenance_level`),
+    KEY `idx_status` (`status`),
+    KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='标准作业规程';
+
+CREATE TABLE IF NOT EXISTS `procedure_step` (
+    `id`                BIGINT       NOT NULL COMMENT '雪花ID',
+    `procedure_id`      BIGINT       NOT NULL COMMENT '关联规程ID',
+    `step_order`        INT          NOT NULL COMMENT '步骤序号(从1开始)',
+    `title`             VARCHAR(200) NOT NULL COMMENT '步骤标题',
+    `content`           TEXT         DEFAULT NULL COMMENT '操作详细内容',
+    `safety_note`       TEXT         DEFAULT NULL COMMENT '安全注意事项',
+    `is_checkpoint`     TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否合规检查点(Phase3)',
+    `checkpoint_items`  JSON         DEFAULT NULL COMMENT '检查项列表(Phase3)',
+    `estimated_minutes` INT          DEFAULT NULL COMMENT '预估耗时(分钟)',
+    `reference_images`  JSON         DEFAULT NULL COMMENT '参考图片URL列表',
+    `created_at`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_procedure_order` (`procedure_id`, `step_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规程步骤模板';
