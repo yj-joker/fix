@@ -24,12 +24,6 @@ public interface MaintenanceTaskService {
     /** 执行某一步骤（提交证据 → AI验证） */
     TaskStepRecordVO executeStep(Long taskId, Long stepId, StepExecuteDTO dto);
 
-    /** 管理员审核步骤执行证据 */
-    TaskStepRecordVO reviewStep(Long taskId, Long stepId, boolean approved, String reviewNote, Long reviewerId);
-
-    /** 管理员审核步骤内容（专家审核，PENDING_EXPERT_REVIEW → GENERATED） */
-    void expertReview(Long taskId, List<Map<String, Object>> stepReviews, Long reviewerId);
-
     /** 查询任务详情（含步骤列表） */
     MaintenanceTaskVO getTaskDetail(Long taskId);
 

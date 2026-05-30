@@ -46,7 +46,7 @@ public class MaintenanceTask implements Serializable {
     /** 检修等级: ROUTINE(日常保养) / MINOR(小修) / MAJOR(大修) */
     private String maintenanceLevel;
 
-    /** 状态: CREATED / GENERATING / GENERATED / GENERATE_FAILED / PENDING_EXPERT_REVIEW / EXECUTING / CLOSED */
+    /** 状态: CREATED / GENERATING / GENERATED / GENERATE_FAILED / EXECUTING / CLOSED */
     private String status;
 
     /** 步骤总数（冗余） */

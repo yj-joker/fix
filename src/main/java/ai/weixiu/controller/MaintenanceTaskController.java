@@ -42,18 +42,6 @@ public class MaintenanceTaskController {
         return Result.success(null);
     }
 
-    /** 管理员审核步骤内容（PENDING_EXPERT_REVIEW → GENERATED） */
-    @PostMapping("/{taskId}/expert-review")
-    @SuppressWarnings("unchecked")
-    public Result<Void> expertReview(
-            @PathVariable Long taskId,
-            @RequestBody Map<String, Object> body) {
-        Long reviewerId = BaseContext.getCurrentId();
-        List<Map<String, Object>> stepReviews = (List<Map<String, Object>>) body.get("stepReviews");
-        taskService.expertReview(taskId, stepReviews, reviewerId);
-        return Result.success(null);
-    }
-
     /** 开始执行任务（GENERATED → EXECUTING） */
     @PostMapping("/{taskId}/start")
     public Result<Void> startExecute(@PathVariable Long taskId) {
@@ -90,19 +78,6 @@ public class MaintenanceTaskController {
     public Result<List<TaskStepRecordVO>> listSteps(@PathVariable Long taskId) {
         List<TaskStepRecordVO> steps = taskService.listSteps(taskId);
         return Result.success(steps);
-    }
-
-    /** 管理员审核步骤（PENDING_REVIEW → COMPLETED / PENDING） */
-    @PostMapping("/{taskId}/steps/{stepId}/review")
-    public Result<TaskStepRecordVO> reviewStep(
-            @PathVariable Long taskId,
-            @PathVariable Long stepId,
-            @RequestBody Map<String, Object> body) {
-        boolean approved = Boolean.TRUE.equals(body.get("approved"));
-        String reviewNote = (String) body.get("reviewNote");
-        Long reviewerId = BaseContext.getCurrentId();
-        TaskStepRecordVO vo = taskService.reviewStep(taskId, stepId, approved, reviewNote, reviewerId);
-        return Result.success(vo);
     }
 
     /** 沉淀为标准规程（CLOSED → 创建 StandardProcedure，返回规程ID） */

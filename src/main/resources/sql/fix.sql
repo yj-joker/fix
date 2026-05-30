@@ -217,17 +217,13 @@ CREATE TABLE IF NOT EXISTS `task_step_record` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='任务步骤执行记录';
 
 -- =============================================
--- AI 验收 + 置信度人工审核 扩展字段
+-- AI 验收字段
 -- =============================================
 
 ALTER TABLE task_step_record
     ADD COLUMN `ai_pass`       TINYINT(1)   DEFAULT NULL COMMENT 'AI验证是否通过',
     ADD COLUMN `ai_confidence` DECIMAL(4,3) DEFAULT NULL COMMENT 'AI验证置信度(0-1)',
-    ADD COLUMN `ai_reason`     TEXT         DEFAULT NULL COMMENT 'AI验证理由',
-    ADD COLUMN `review_status` VARCHAR(20)  DEFAULT NULL COMMENT '人工审核状态: PENDING_REVIEW/APPROVED/REJECTED',
-    ADD COLUMN `reviewer_id`   BIGINT       DEFAULT NULL COMMENT '审核人ID',
-    ADD COLUMN `review_note`   TEXT         DEFAULT NULL COMMENT '审核备注',
-    ADD COLUMN `reviewed_at`   DATETIME     DEFAULT NULL COMMENT '审核时间';
+    ADD COLUMN `ai_reason`     TEXT         DEFAULT NULL COMMENT 'AI验证理由';
 
 -- =============================================
 -- 步骤来源溯源 + 生成置信度

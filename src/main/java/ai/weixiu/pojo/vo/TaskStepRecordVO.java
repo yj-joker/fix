@@ -31,12 +31,8 @@ public class TaskStepRecordVO {
     private Object sources;
     private BigDecimal generateConfidence;
 
-    // ===== AI 验收 + 人工审核 =====
+    // ===== AI 验收 =====
     private Boolean aiPass;
     private BigDecimal aiConfidence;
     private String aiReason;
-    private String reviewStatus;
-    private Long reviewerId;
-    private String reviewNote;
-    private LocalDateTime reviewedAt;
 }

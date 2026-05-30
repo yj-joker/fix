@@ -80,7 +80,7 @@ public class TaskStepRecord implements Serializable {
     /** 生成置信度(0-1) */
     private BigDecimal generateConfidence;
 
-    // ===== AI 验收 + 人工审核字段 =====
+    // ===== AI 验收字段 =====
 
     /** AI验证是否通过 */
     private Boolean aiPass;
@@ -90,16 +90,4 @@ public class TaskStepRecord implements Serializable {
 
     /** AI验证理由 */
     private String aiReason;
-
-    /** 人工审核状态: PENDING_REVIEW/APPROVED/REJECTED */
-    private String reviewStatus;
-
-    /** 审核人ID */
-    private Long reviewerId;
-
-    /** 审核备注 */
-    private String reviewNote;
-
-    /** 审核时间 */
-    private LocalDateTime reviewedAt;
 }

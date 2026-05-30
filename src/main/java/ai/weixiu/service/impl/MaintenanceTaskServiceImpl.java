@@ -111,51 +111,6 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         log.info("[任务] 重试生成 taskId={}", taskId);
     }
 
-    // ==================== 管理员审核步骤内容（专家审核） ====================
-
-    @Override
-    @Transactional
-    public void expertReview(Long taskId, List<Map<String, Object>> stepReviews, Long reviewerId) {
-        MaintenanceTask task = getTaskOrThrow(taskId);
-        if (!"PENDING_EXPERT_REVIEW".equals(task.getStatus())) {
-            throw new TaskStateException("只有待专家审核的任务才能审核，当前状态: " + task.getStatus());
-        }
-
-        for (Map<String, Object> review : stepReviews) {
-            Long stepId = ((Number) review.get("stepId")).longValue();
-            TaskStepRecord step = stepMapper.selectById(stepId);
-            if (step == null || !step.getTaskId().equals(taskId)) {
-                throw new NotFoundException("步骤不存在: " + stepId);
-            }
-
-            // 管理员可直接编辑步骤内容
-            String editedTitle = (String) review.get("editedTitle");
-            String editedContent = (String) review.get("editedContent");
-            String editedSafetyNote = (String) review.get("editedSafetyNote");
-            if (editedTitle != null && !editedTitle.isBlank()) {
-                step.setTitle(editedTitle);
-            }
-            if (editedContent != null && !editedContent.isBlank()) {
-                step.setContent(editedContent);
-            }
-            if (editedSafetyNote != null && !editedSafetyNote.isBlank()) {
-                step.setSafetyNote(editedSafetyNote);
-            }
-
-            step.setReviewerId(reviewerId);
-            step.setReviewStatus("EXPERT_APPROVED");
-            step.setReviewedAt(LocalDateTime.now());
-            stepMapper.updateById(step);
-            log.info("[任务] 管理员审核步骤 taskId={} stepId={}", taskId, stepId);
-        }
-
-        // 审核完成 → 任务进入 GENERATED 状态，可以开始执行
-        task.setStatus("GENERATED");
-        task.setUpdatedAt(LocalDateTime.now());
-        taskMapper.updateById(task);
-        log.info("[任务] 管理员审核完成，任务可执行 taskId={}", taskId);
-    }
-
     // ==================== 开始执行 ====================
 
     @Override
@@ -223,53 +178,6 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         return toStepVO(step);
     }
 
-    // ==================== 管理员审核步骤 ====================
-
-    @Override
-    @Transactional
-    public TaskStepRecordVO reviewStep(Long taskId, Long stepId, boolean approved, String reviewNote, Long reviewerId) {
-        MaintenanceTask task = getTaskOrThrow(taskId);
-        if (!"EXECUTING".equals(task.getStatus())) {
-            throw new TaskStateException("任务未在执行中，当前状态: " + task.getStatus());
-        }
-
-        TaskStepRecord step = stepMapper.selectById(stepId);
-        if (step == null || !step.getTaskId().equals(taskId)) {
-            throw new NotFoundException("步骤不存在");
-        }
-        if (!"PENDING_REVIEW".equals(step.getStatus())) {
-            throw new TaskStateException("该步骤不在待审核状态，当前状态: " + step.getStatus());
-        }
-
-        step.setReviewerId(reviewerId);
-        step.setReviewNote(reviewNote);
-        step.setReviewedAt(LocalDateTime.now());
-
-        if (approved) {
-            step.setReviewStatus("APPROVED");
-            step.setStatus("COMPLETED");
-            step.setCompletedAt(LocalDateTime.now());
-            log.info("[任务] 管理员审核通过 taskId={} stepId={}", taskId, stepId);
-        } else {
-            step.setReviewStatus("REJECTED");
-            step.setStatus("PENDING");
-            step.setAiPass(null);
-            step.setAiConfidence(null);
-            step.setAiReason(null);
-            step.setImages(null);
-            step.setNote(null);
-            log.info("[任务] 管理员驳回，工人需重新提交 taskId={} stepId={}", taskId, stepId);
-        }
-
-        stepMapper.updateById(step);
-
-        if (approved) {
-            checkAllStepsCompleted(task);
-        }
-
-        return toStepVO(step);
-    }
-
     // ==================== AI验证结果回调（由StepVerifyResultListener调用）====================
 
     @Transactional
@@ -289,16 +197,18 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         step.setAiReason(reason);
 
         if (confidence != null && confidence >= 0.85) {
+            // 高置信度：自动通过，无需人工介入
             step.setStatus("COMPLETED");
             step.setCompletedAt(LocalDateTime.now());
             log.info("[任务] AI验证自动通过 stepId={} confidence={}", stepId, confidence);
         } else if (confidence != null && confidence >= 0.5) {
+            // 中等置信度：AI认为基本合格，工人可查看反馈自行判断
             step.setStatus("AI_PASSED");
-            log.info("[任务] AI验证通过但建议补充 stepId={} confidence={}", stepId, confidence);
+            log.info("[任务] AI验证通过（置信度中等），工人可查看反馈 stepId={} confidence={}", stepId, confidence);
         } else {
-            step.setStatus("PENDING_REVIEW");
-            step.setReviewStatus("PENDING_REVIEW");
-            log.info("[任务] AI验证置信度低，转人工审核 stepId={} confidence={}", stepId, confidence);
+            // 低置信度：AI认为不合格，退回让工人查看原因并重新提交
+            step.setStatus("PENDING");
+            log.info("[任务] AI验证未通过，退回工人重新提交 stepId={} confidence={} reason={}", stepId, confidence, reason);
         }
 
         stepMapper.updateById(step);
@@ -361,9 +271,6 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
 
     // ==================== MQ 回调 ====================
 
-    /** 生成置信度阈值：低于此值的步骤需要管理员审核 */
-    private static final double GENERATE_CONFIDENCE_THRESHOLD = 0.70;
-
     @Override
     @Transactional
     public void onGenerateSuccess(Long taskId, List<TaskStepRecordVO> steps, Object graphExtraction) {
@@ -384,7 +291,6 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         }
 
         // 批量插入步骤，记录来源和置信度
-        boolean hasLowConfidence = false;
         List<TaskStepRecord> records = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
             TaskStepRecordVO vo = steps.get(i);
@@ -402,27 +308,14 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             record.setStatus("PENDING");
             record.setCreatedAt(LocalDateTime.now());
             records.add(record);
-
-            if (vo.getGenerateConfidence() == null
-                    || vo.getGenerateConfidence().doubleValue() < GENERATE_CONFIDENCE_THRESHOLD) {
-                hasLowConfidence = true;
-            }
         }
         Db.saveBatch(records);
 
-        // 有低置信度步骤 → 需要管理员先审核步骤内容再执行
-        if (hasLowConfidence) {
-            task.setStatus("PENDING_EXPERT_REVIEW");
-            log.info("[任务] 存在低置信度步骤，等待管理员审核 taskId={}", taskId);
-        } else {
-            task.setStatus("GENERATED");
-            log.info("[任务] 所有步骤置信度达标，可直接执行 taskId={}", taskId);
-        }
-
+        task.setStatus("GENERATED");
         task.setStepCount(steps.size());
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
-        log.info("[任务] 步骤生成成功 taskId={} 步骤数={} 状态={}", taskId, steps.size(), task.getStatus());
+        log.info("[任务] 步骤生成成功 taskId={} 步骤数={}", taskId, steps.size());
     }
 
     @Override
