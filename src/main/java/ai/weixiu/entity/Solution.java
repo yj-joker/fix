@@ -46,6 +46,12 @@ public class Solution {
     @Property("verified")// 是否已验证有效
     private Boolean verified;
 
+    @Property("procedure_id")// 关联MySQL标准规程ID（知识沉淀时写入）
+    private Long procedureId;
+
+    @Property("source_task_id")// 来源任务ID（知识沉淀时写入，溯源用）
+    private Long sourceTaskId;
+
     @Property("image_urls")
     private List<String> imageUrls;
 

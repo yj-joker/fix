@@ -59,6 +59,27 @@ public class TaskStepRecord implements Serializable {
     private LocalDateTime completedAt;
     private LocalDateTime createdAt;
 
+    // ===== 合规检查点 =====
+
+    /** 是否为合规检查点 */
+    private Boolean isCheckpoint;
+
+    /** 检查项列表，如 ["已断电确认","已佩戴护目镜"] */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> checkpointItems;
+
+    /** 工人是否已确认所有检查项 */
+    private Boolean checkpointConfirmed;
+
+    // ===== 步骤来源溯源 =====
+
+    /** 步骤来源引用(手册/图谱)，JSON 数组 */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Object sources;
+
+    /** 生成置信度(0-1) */
+    private BigDecimal generateConfidence;
+
     // ===== AI 验收 + 人工审核字段 =====
 
     /** AI验证是否通过 */

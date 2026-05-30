@@ -13,4 +13,7 @@ public class StepExecuteDTO {
 
     /** 工人填写的备注 */
     private String note;
+
+    /** 合规检查点确认（如果该步骤是检查点，必须为true才能提交） */
+    private Boolean checkpointConfirmed;
 }

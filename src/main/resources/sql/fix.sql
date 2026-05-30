@@ -1,3 +1,4 @@
+
 -- 创建数据库（如果不存在）
 CREATE DATABASE IF NOT EXISTS fix DEFAULT CHARSET=utf8mb4;
 
@@ -275,3 +276,24 @@ CREATE TABLE IF NOT EXISTS `procedure_step` (
     PRIMARY KEY (`id`),
     KEY `idx_procedure_order` (`procedure_id`, `step_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规程步骤模板';
+
+-- =============================================
+-- Phase 2: 任务关联标准规程 + 检修等级
+-- =============================================
+ALTER TABLE maintenance_task
+    ADD COLUMN `procedure_id`       BIGINT       DEFAULT NULL COMMENT '关联的标准规程ID（从规程创建时不为空）',
+    ADD COLUMN `maintenance_level`  VARCHAR(20)  DEFAULT NULL COMMENT '检修等级: ROUTINE(日常保养)/MINOR(小修)/MAJOR(大修)';
+
+-- =============================================
+-- Phase 3: 合规检查点
+-- =============================================
+ALTER TABLE task_step_record
+    ADD COLUMN `is_checkpoint`        TINYINT(1)  NOT NULL DEFAULT 0 COMMENT '是否为合规检查点',
+    ADD COLUMN `checkpoint_items`     JSON        DEFAULT NULL COMMENT '检查项列表 ["已断电确认","已佩戴护目镜",...]',
+    ADD COLUMN `checkpoint_confirmed` TINYINT(1)  NOT NULL DEFAULT 0 COMMENT '工人是否已确认所有检查项';
+
+-- =============================================
+-- Phase 4: 知识沉淀（AI图谱线索 + 沉淀接口）
+-- =============================================
+ALTER TABLE maintenance_task
+    ADD COLUMN `graph_extraction` JSON DEFAULT NULL COMMENT 'AI提取的图谱线索(设备/部件/故障/方案)，沉淀时供管理员确认';

@@ -42,6 +42,18 @@ public class MaintenanceTaskController {
         return Result.success(null);
     }
 
+    /** 管理员审核步骤内容（PENDING_EXPERT_REVIEW → GENERATED） */
+    @PostMapping("/{taskId}/expert-review")
+    @SuppressWarnings("unchecked")
+    public Result<Void> expertReview(
+            @PathVariable Long taskId,
+            @RequestBody Map<String, Object> body) {
+        Long reviewerId = BaseContext.getCurrentId();
+        List<Map<String, Object>> stepReviews = (List<Map<String, Object>>) body.get("stepReviews");
+        taskService.expertReview(taskId, stepReviews, reviewerId);
+        return Result.success(null);
+    }
+
     /** 开始执行任务（GENERATED → EXECUTING） */
     @PostMapping("/{taskId}/start")
     public Result<Void> startExecute(@PathVariable Long taskId) {
@@ -91,6 +103,23 @@ public class MaintenanceTaskController {
         Long reviewerId = BaseContext.getCurrentId();
         TaskStepRecordVO vo = taskService.reviewStep(taskId, stepId, approved, reviewNote, reviewerId);
         return Result.success(vo);
+    }
+
+    /** 沉淀为标准规程（CLOSED → 创建 StandardProcedure，返回规程ID） */
+    @PostMapping("/{taskId}/promote")
+    public Result<Long> promoteToStandardProcedure(@PathVariable Long taskId) {
+        Long operatorId = BaseContext.getCurrentId();
+        Long procedureId = taskService.promoteToStandardProcedure(taskId, operatorId);
+        return Result.success(procedureId);
+    }
+
+    /** 沉淀到知识图谱（CLOSED → 创建图谱节点，管理员确认后提交） */
+    @PostMapping("/{taskId}/promote-to-graph")
+    public Result<Void> promoteToGraph(
+            @PathVariable Long taskId,
+            @RequestBody Map<String, Object> graphData) {
+        taskService.promoteToGraph(taskId, graphData);
+        return Result.success(null);
     }
 
     /** 步骤对话辅助（转发到 Python FixAgent，实时SSE流） */

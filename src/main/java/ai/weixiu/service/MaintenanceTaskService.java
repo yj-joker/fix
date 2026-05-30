@@ -8,6 +8,7 @@ import ai.weixiu.pojo.vo.MaintenanceTaskVO;
 import ai.weixiu.pojo.vo.TaskStepRecordVO;
 
 import java.util.List;
+import java.util.Map;
 
 public interface MaintenanceTaskService {
 
@@ -23,8 +24,11 @@ public interface MaintenanceTaskService {
     /** 执行某一步骤（提交证据 → AI验证） */
     TaskStepRecordVO executeStep(Long taskId, Long stepId, StepExecuteDTO dto);
 
-    /** 管理员审核步骤 */
+    /** 管理员审核步骤执行证据 */
     TaskStepRecordVO reviewStep(Long taskId, Long stepId, boolean approved, String reviewNote, Long reviewerId);
+
+    /** 管理员审核步骤内容（专家审核，PENDING_EXPERT_REVIEW → GENERATED） */
+    void expertReview(Long taskId, List<Map<String, Object>> stepReviews, Long reviewerId);
 
     /** 查询任务详情（含步骤列表） */
     MaintenanceTaskVO getTaskDetail(Long taskId);
@@ -35,9 +39,15 @@ public interface MaintenanceTaskService {
     /** 查询任务的步骤列表 */
     List<TaskStepRecordVO> listSteps(Long taskId);
 
-    /** MQ回调：LLM生成步骤成功 */
-    void onGenerateSuccess(Long taskId, List<TaskStepRecordVO> steps);
+    /** MQ回调：LLM生成步骤成功（含图谱线索） */
+    void onGenerateSuccess(Long taskId, List<TaskStepRecordVO> steps, Object graphExtraction);
 
     /** MQ回调：LLM生成步骤失败 */
     void onGenerateFailed(Long taskId, String errorMsg);
+
+    /** 沉淀为标准规程（CLOSED → 创建 StandardProcedure） */
+    Long promoteToStandardProcedure(Long taskId, Long operatorId);
+
+    /** 沉淀到知识图谱（CLOSED → 创建图谱节点） */
+    void promoteToGraph(Long taskId, Map<String, Object> graphData);
 }

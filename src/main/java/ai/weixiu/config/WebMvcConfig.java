@@ -37,7 +37,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // 1. 登录鉴权拦截器（最先执行）
         registry.addInterceptor(sessionInterceptor)
                 .addPathPatterns("/**")
-                .excludePathPatterns("/weixiu/user/login", "/weixiu/user/register")
+                .excludePathPatterns(
+                        "/weixiu/user/login",
+                        "/weixiu/user/register",
+                        "/*.html",
+                        "/static/**",
+                        "/favicon.ico"
+                )
                 .order(1);
 
         // 2. AI接口限流拦截器（鉴权通过后再限流）

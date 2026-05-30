@@ -22,4 +22,7 @@ public class MaintenanceTaskDTO {
 
     /** 报修图片URL列表 */
     private List<String> reportImages;
+
+    /** 检修等级: ROUTINE(日常保养) / MINOR(小修) / MAJOR(大修)，可选 */
+    private String maintenanceLevel;
 }

@@ -40,7 +40,13 @@ public class MaintenanceTask implements Serializable {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> reportImages;
 
-    /** 状态: CREATED / GENERATING / GENERATED / GENERATE_FAILED / EXECUTING / CLOSED */
+    /** 关联的标准规程ID（如果从规程创建，则不为空） */
+    private Long procedureId;
+
+    /** 检修等级: ROUTINE(日常保养) / MINOR(小修) / MAJOR(大修) */
+    private String maintenanceLevel;
+
+    /** 状态: CREATED / GENERATING / GENERATED / GENERATE_FAILED / PENDING_EXPERT_REVIEW / EXECUTING / CLOSED */
     private String status;
 
     /** 步骤总数（冗余） */
@@ -48,6 +54,10 @@ public class MaintenanceTask implements Serializable {
 
     /** 报修人ID */
     private Long reporterId;
+
+    /** AI提取的图谱线索（生成步骤时顺带提取，沉淀时供管理员确认） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Object graphExtraction;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

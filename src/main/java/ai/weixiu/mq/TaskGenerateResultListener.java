@@ -48,7 +48,9 @@ public class TaskGenerateResultListener {
                 String stepsJson = objectMapper.writeValueAsString(stepsObj);
                 List<TaskStepRecordVO> steps = objectMapper.readValue(stepsJson,
                         new TypeReference<List<TaskStepRecordVO>>() {});
-                taskService.onGenerateSuccess(taskId, steps);
+                // 提取AI生成的图谱线索（可能为空）
+                Object graphExtraction = body.get("graphExtraction");
+                taskService.onGenerateSuccess(taskId, steps, graphExtraction);
             } else {
                 String error = (String) body.getOrDefault("error", "未知错误");
                 taskService.onGenerateFailed(taskId, error);
