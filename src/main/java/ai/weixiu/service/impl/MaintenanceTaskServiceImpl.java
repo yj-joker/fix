@@ -65,10 +65,12 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
 
         // 尝试匹配标准规程：按设备名称模糊匹配设备类型 + 检修等级精确匹配
         StandardProcedure matched = matchProcedure(dto.getDeviceName(), dto.getMaintenanceLevel());
+        boolean wantAdapt = Boolean.TRUE.equals(dto.getAiAdapt());
 
-        if (matched != null) {
-            // 匹配到标准规程 → 从规程模板拷贝步骤，跳过AI生成
+        if (matched != null && !wantAdapt) {
+            // ======== 路径1：直接拷贝规程模板（秒级）========
             task.setProcedureId(matched.getId());
+            task.setGenerateMode("PROCEDURE_COPY");
             task.setStatus("GENERATED");
             taskMapper.insert(task);
 
@@ -77,10 +79,27 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             task.setUpdatedAt(LocalDateTime.now());
             taskMapper.updateById(task);
 
-            log.info("[任务] 匹配到标准规程 taskId={} procedureId={} procedureName={} 步骤数={}",
+            log.info("[任务] 直接拷贝规程 taskId={} procedureId={} procedureName={} 步骤数={}",
                     task.getId(), matched.getId(), matched.getName(), stepCount);
+
+        } else if (matched != null) {
+            // ======== 路径2：AI基于规程微调（10-20s）========
+            task.setProcedureId(matched.getId());
+            task.setGenerateMode("AI_ADAPT");
+            task.setStatus("CREATED");
+            taskMapper.insert(task);
+
+            sendAdaptMessage(task, matched.getId());
+            task.setStatus("GENERATING");
+            task.setUpdatedAt(LocalDateTime.now());
+            taskMapper.updateById(task);
+
+            log.info("[任务] AI微调规程 taskId={} procedureId={} procedureName={}",
+                    task.getId(), matched.getId(), matched.getName());
+
         } else {
-            // 未匹配到规程 → 走原有AI生成流程
+            // ======== 路径3：AI从零生成（20-30s）========
+            task.setGenerateMode("AI_GENERATE");
             task.setStatus("CREATED");
             taskMapper.insert(task);
 
@@ -89,7 +108,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             task.setUpdatedAt(LocalDateTime.now());
             taskMapper.updateById(task);
 
-            log.info("[任务] 未匹配到标准规程，走AI生成 taskId={}", task.getId());
+            log.info("[任务] 未匹配到规程，AI从零生成 taskId={}", task.getId());
         }
 
         return toVO(task, null);
@@ -180,6 +199,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
 
     // ==================== AI验证结果回调（由StepVerifyResultListener调用）====================
 
+    @Override
     @Transactional
     public void onStepVerifyResult(Long stepId, Boolean aiPass, Double confidence, String reason) {
         TaskStepRecord step = stepMapper.selectById(stepId);
@@ -206,9 +226,9 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             step.setStatus("AI_PASSED");
             log.info("[任务] AI验证通过（置信度中等），工人可查看反馈 stepId={} confidence={}", stepId, confidence);
         } else {
-            // 低置信度：AI认为不合格，退回让工人查看原因并重新提交
-            step.setStatus("PENDING");
-            log.info("[任务] AI验证未通过，退回工人重新提交 stepId={} confidence={} reason={}", stepId, confidence, reason);
+            // 低置信度：AI认为不合格，工人可选择重新提交或强制完成
+            step.setStatus("AI_REJECTED");
+            log.info("[任务] AI验证未通过，工人可重新提交或强制完成 stepId={} confidence={} reason={}", stepId, confidence, reason);
         }
 
         stepMapper.updateById(step);
@@ -220,6 +240,38 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
                 checkAllStepsCompleted(task);
             }
         }
+    }
+
+    // ==================== 工人强制完成步骤（AI_REJECTED 后） ====================
+
+    @Override
+    @Transactional
+    public TaskStepRecordVO forceCompleteStep(Long taskId, Long stepId, String reason) {
+        MaintenanceTask task = getTaskOrThrow(taskId);
+        if (!"EXECUTING".equals(task.getStatus())) {
+            throw new TaskStateException("任务未在执行中，当前状态: " + task.getStatus());
+        }
+
+        TaskStepRecord step = stepMapper.selectById(stepId);
+        if (step == null || !step.getTaskId().equals(taskId)) {
+            throw new NotFoundException("步骤不存在");
+        }
+        if (!"AI_REJECTED".equals(step.getStatus())) {
+            throw new TaskStateException("只有AI验证未通过的步骤才能强制完成，当前状态: " + step.getStatus());
+        }
+
+        step.setStatus("COMPLETED");
+        step.setNote(step.getNote() != null
+                ? step.getNote() + " [工人强制完成: " + reason + "]"
+                : "[工人强制完成: " + reason + "]");
+        step.setCompletedAt(LocalDateTime.now());
+        stepMapper.updateById(step);
+
+        log.info("[任务] 工人强制完成步骤 taskId={} stepId={} aiConfidence={} reason={}",
+                taskId, stepId, step.getAiConfidence(), reason);
+
+        checkAllStepsCompleted(task);
+        return toStepVO(step);
     }
 
     // ==================== 查询 ====================
@@ -341,6 +393,11 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             throw new TaskStateException("只有已关闭的任务才能沉淀为标准规程，当前状态: " + task.getStatus());
         }
 
+        // 重复沉淀保护
+        if (Boolean.TRUE.equals(task.getPromotedProcedure())) {
+            throw new TaskStateException("该任务已沉淀为标准规程，不可重复操作");
+        }
+
         // 查任务步骤
         List<TaskStepRecord> taskSteps = stepMapper.selectList(
                 new LambdaQueryWrapper<TaskStepRecord>()
@@ -349,6 +406,18 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         );
         if (taskSteps.isEmpty()) {
             throw new TaskStateException("任务没有步骤，无法沉淀");
+        }
+
+        // 校验所有步骤是否都已完成（COMPLETED / AI_PASSED / SKIPPED 视为可沉淀状态）
+        List<String> acceptableStatus = List.of("COMPLETED", "AI_PASSED", "SKIPPED");
+        List<TaskStepRecord> unfinished = taskSteps.stream()
+                .filter(s -> !acceptableStatus.contains(s.getStatus()))
+                .collect(Collectors.toList());
+        if (!unfinished.isEmpty()) {
+            String detail = unfinished.stream()
+                    .map(s -> s.getTitle() + "(" + s.getStatus() + ")")
+                    .collect(Collectors.joining(", "));
+            throw new TaskStateException("存在未完成的步骤，无法沉淀: " + detail);
         }
 
         // 创建标准规程（DRAFT 状态，管理员还需编辑后发布）
@@ -383,6 +452,10 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         }).collect(Collectors.toList());
         Db.saveBatch(procedureSteps);
 
+        // 标记已沉淀
+        task.setPromotedProcedure(true);
+        taskMapper.updateById(task);
+
         log.info("[知识沉淀] 任务沉淀为标准规程 taskId={} procedureId={} 步骤数={}",
                 taskId, procedure.getId(), taskSteps.size());
         return procedure.getId();
@@ -397,13 +470,31 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             throw new TaskStateException("只有已关闭的任务才能沉淀到图谱，当前状态: " + task.getStatus());
         }
 
+        // 重复沉淀保护
+        if (Boolean.TRUE.equals(task.getPromotedGraph())) {
+            throw new TaskStateException("该任务已沉淀到知识图谱，不可重复操作");
+        }
+
+        // 如果前端没传 graphData 内容，则用 AI 提取的 graphExtraction 作为默认数据
+        if (graphData == null || graphData.isEmpty()) {
+            if (task.getGraphExtraction() instanceof Map) {
+                graphData = (Map<String, Object>) task.getGraphExtraction();
+            } else {
+                throw new IllegalArgumentException("没有可用的图谱数据，请提供沉淀内容或等待AI提取完成");
+            }
+        }
+
         String deviceName = (String) graphData.get("deviceName");
+        if (deviceName == null || deviceName.isBlank()) {
+            // 兜底：用任务的设备名称
+            deviceName = task.getDeviceName();
+        }
         if (deviceName == null || deviceName.isBlank()) {
             throw new IllegalArgumentException("设备名称不能为空");
         }
 
         // 1. 查找或创建 Device 节点
-        String deviceId = findOrCreateDevice(deviceName);
+        String deviceNodeId = findOrCreateDevice(deviceName);
 
         // 2. 处理 components + faults + solutions
         List<Map<String, Object>> components = (List<Map<String, Object>>) graphData.getOrDefault("components", List.of());
@@ -415,7 +506,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         for (Map<String, Object> comp : components) {
             String compName = (String) comp.get("name");
             if (compName == null || compName.isBlank()) continue;
-            String compId = findOrCreateComponent(compName, deviceId);
+            String compId = findOrCreateComponent(compName, deviceNodeId);
             componentIdMap.put(compName, compId);
         }
 
@@ -436,7 +527,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
                 createRelationship(compId, faultId, "CAUSES");
             }
             // 关联 Device → Fault (HAS_FAULT)
-            createRelationship(deviceId, faultId, "HAS_FAULT");
+            createRelationship(deviceNodeId, faultId, "HAS_FAULT");
         }
 
         // 3. 创建 Solution 节点
@@ -458,6 +549,10 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             }
         }
 
+        // 标记已沉淀
+        task.setPromotedGraph(true);
+        taskMapper.updateById(task);
+
         log.info("[知识沉淀] 任务沉淀到图谱完成 taskId={} 设备={} 部件数={} 故障数={} 方案数={}",
                 taskId, deviceName, components.size(), faults.size(), solutions.size());
     }
@@ -465,44 +560,33 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     // ==================== 图谱操作私有方法 ====================
 
     private String findOrCreateDevice(String deviceName) {
-        // 先按名称精确查找
+        // MERGE: 按 name 查找，不存在则创建；ON CREATE 时赋 id
         return neo4jClient.query(
-                "OPTIONAL MATCH (d:Device) WHERE d.name = $name " +
-                "WITH d " +
-                "CALL { WITH d " +
-                "  WITH d WHERE d IS NULL " +
-                "  CREATE (n:Device {name: $name, created_at: datetime()}) RETURN n " +
-                "  UNION " +
-                "  WITH d WHERE d IS NOT NULL RETURN d AS n " +
-                "} RETURN n.id AS id"
+                "MERGE (d:Device {name: $name}) " +
+                "ON CREATE SET d.id = randomUUID(), d.created_at = datetime() " +
+                "RETURN d.id AS id"
         ).bind(deviceName).to("name")
         .fetchAs(String.class)
         .one()
         .orElseThrow(() -> new RuntimeException("创建设备节点失败: " + deviceName));
     }
 
-    private String findOrCreateComponent(String compName, String deviceId) {
-        // 先查该设备下是否已有此部件
+    private String findOrCreateComponent(String compName, String deviceNodeId) {
+        // 先 MATCH 设备，再 MERGE 该设备下的部件（通过关系绑定唯一性）
         return neo4jClient.query(
-                "OPTIONAL MATCH (d:Device {id: $deviceId})-[:OWNS]->(c:Component) WHERE c.name = $name " +
-                "WITH d, c " +
-                "CALL { WITH d, c " +
-                "  WITH d, c WHERE c IS NULL " +
-                "  CREATE (n:Component {name: $name}) " +
-                "  WITH d, n MERGE (d)-[:OWNS]->(n) RETURN n " +
-                "  UNION " +
-                "  WITH d, c WHERE c IS NOT NULL RETURN c AS n " +
-                "} RETURN n.id AS id"
-        ).bind(deviceId).to("deviceId")
+                "MATCH (d:Device {id: $deviceId}) " +
+                "MERGE (d)-[:OWNS]->(c:Component {name: $name}) " +
+                "ON CREATE SET c.id = randomUUID() " +
+                "RETURN c.id AS id"
+        ).bind(deviceNodeId).to("deviceId")
         .bind(compName).to("name")
         .fetchAs(String.class)
         .one()
         .orElseThrow(() -> new RuntimeException("创建部件节点失败: " + compName));
     }
-
     private String createFaultNode(String name, String severity, String description) {
         return neo4jClient.query(
-                "CREATE (f:Fault {name: $name, severity: $severity, description: $description, created_at: datetime()}) " +
+                "CREATE (f:Fault {id: randomUUID(), name: $name, severity: $severity, description: $description, created_at: datetime()}) " +
                 "RETURN f.id AS id"
         ).bind(name).to("name")
         .bind(severity).to("severity")
@@ -514,7 +598,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
 
     private String createSolutionNode(String title, String summary, Long procedureId, Long sourceTaskId) {
         return neo4jClient.query(
-                "CREATE (s:Solution {title: $title, description: $summary, verified: true, " +
+                "CREATE (s:Solution {id: randomUUID(), title: $title, description: $summary, verified: true, " +
                 "procedure_id: $procedureId, source_task_id: $sourceTaskId, created_at: datetime()}) " +
                 "RETURN s.id AS id"
         ).bind(title).to("title")
@@ -618,12 +702,57 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         msg.put("faultDescription", task.getFaultDescription());
         msg.put("urgencyLevel", task.getUrgencyLevel());
         msg.put("reportImages", task.getReportImages());
+        msg.put("generateMode", "AI_GENERATE");
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.TASK_EXCHANGE,
                 RabbitMQConfig.TASK_GENERATE_KEY,
                 msg
         );
-        log.info("[任务] 发送生成消息 taskId={} taskNumber={}", task.getId(), task.getTaskNumber());
+        log.info("[任务] 发送AI从零生成消息 taskId={} taskNumber={}", task.getId(), task.getTaskNumber());
+    }
+
+    /**
+     * 发送AI微调消息：携带标准规程的模板步骤，让AI根据具体故障做个性化调整
+     * Python端收到 procedureSteps 后走微调模式，而非从零生成
+     */
+    private void sendAdaptMessage(MaintenanceTask task, Long procedureId) {
+        // 查询规程模板步骤
+        List<ProcedureStep> templateSteps = procedureStepMapper.selectList(
+                new LambdaQueryWrapper<ProcedureStep>()
+                        .eq(ProcedureStep::getProcedureId, procedureId)
+                        .orderByAsc(ProcedureStep::getStepOrder)
+        );
+
+        // 将模板步骤转为简洁的Map列表
+        List<Map<String, Object>> stepList = templateSteps.stream().map(ps -> {
+            Map<String, Object> stepMap = new HashMap<>();
+            stepMap.put("stepOrder", ps.getStepOrder());
+            stepMap.put("title", ps.getTitle());
+            stepMap.put("content", ps.getContent());
+            stepMap.put("safetyNote", ps.getSafetyNote());
+            stepMap.put("isCheckpoint", Boolean.TRUE.equals(ps.getIsCheckpoint()));
+            stepMap.put("checkpointItems", ps.getCheckpointItems());
+            stepMap.put("estimatedMinutes", ps.getEstimatedMinutes());
+            return stepMap;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> msg = new HashMap<>();
+        msg.put("taskId", task.getId());
+        msg.put("taskNumber", task.getTaskNumber());
+        msg.put("deviceId", task.getDeviceId());
+        msg.put("deviceName", task.getDeviceName());
+        msg.put("faultDescription", task.getFaultDescription());
+        msg.put("urgencyLevel", task.getUrgencyLevel());
+        msg.put("reportImages", task.getReportImages());
+        msg.put("generateMode", "AI_ADAPT");
+        msg.put("procedureSteps", stepList);
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.TASK_EXCHANGE,
+                RabbitMQConfig.TASK_GENERATE_KEY,
+                msg
+        );
+        log.info("[任务] 发送AI微调消息 taskId={} procedureId={} 模板步骤数={}",
+                task.getId(), procedureId, templateSteps.size());
     }
 
     private void sendStepVerifyMessage(MaintenanceTask task, TaskStepRecord step) {

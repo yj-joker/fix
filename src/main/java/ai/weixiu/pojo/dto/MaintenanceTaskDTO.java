@@ -25,4 +25,7 @@ public class MaintenanceTaskDTO {
 
     /** 检修等级: ROUTINE(日常保养) / MINOR(小修) / MAJOR(大修)，可选 */
     private String maintenanceLevel;
+
+    /** 是否启用AI个性化微调（匹配到标准规程时，AI根据故障描述对步骤做针对性调整） */
+    private Boolean aiAdapt;
 }

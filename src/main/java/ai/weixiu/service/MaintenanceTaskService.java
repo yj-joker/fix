@@ -24,6 +24,9 @@ public interface MaintenanceTaskService {
     /** 执行某一步骤（提交证据 → AI验证） */
     TaskStepRecordVO executeStep(Long taskId, Long stepId, StepExecuteDTO dto);
 
+    /** 工人强制完成步骤（AI_REJECTED → COMPLETED，工人确认AI误判时使用） */
+    TaskStepRecordVO forceCompleteStep(Long taskId, Long stepId, String reason);
+
     /** 查询任务详情（含步骤列表） */
     MaintenanceTaskVO getTaskDetail(Long taskId);
 
@@ -32,6 +35,9 @@ public interface MaintenanceTaskService {
 
     /** 查询任务的步骤列表 */
     List<TaskStepRecordVO> listSteps(Long taskId);
+
+    /** MQ回调：步骤AI验证结果（由StepVerifyResultListener调用） */
+    void onStepVerifyResult(Long stepId, Boolean aiPass, Double confidence, String reason);
 
     /** MQ回调：LLM生成步骤成功（含图谱线索） */
     void onGenerateSuccess(Long taskId, List<TaskStepRecordVO> steps, Object graphExtraction);

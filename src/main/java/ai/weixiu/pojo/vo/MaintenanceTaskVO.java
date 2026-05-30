@@ -19,6 +19,8 @@ public class MaintenanceTaskVO {
     private String procedureName;
     private String maintenanceLevel;
     private String status;
+    /** 生成模式: PROCEDURE_COPY / AI_ADAPT / AI_GENERATE */
+    private String generateMode;
     private Integer stepCount;
     private Long reporterId;
     private LocalDateTime createdAt;
@@ -26,6 +28,12 @@ public class MaintenanceTaskVO {
 
     /** AI提取的图谱线索（沉淀时供管理员确认） */
     private Object graphExtraction;
+
+    /** 是否已沉淀为标准规程 */
+    private Boolean promotedProcedure;
+
+    /** 是否已沉淀到知识图谱 */
+    private Boolean promotedGraph;
 
     /** 步骤列表（详情接口返回） */
     private List<TaskStepRecordVO> steps;

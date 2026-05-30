@@ -59,6 +59,12 @@ public class WebExceptionHandler {
         return Result.error("400", e.getMessage());
     }
 
+    @ExceptionHandler(ForbiddenException.class)
+    public Result handler(ForbiddenException e) {
+        log.warn(e.getMessage());
+        return Result.error("403", e.getMessage());
+    }
+
     @ExceptionHandler(TaskStateException.class)
     public Result handler(TaskStateException e) {
         log.info(e.getMessage());

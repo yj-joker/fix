@@ -49,6 +49,9 @@ public class MaintenanceTask implements Serializable {
     /** 状态: CREATED / GENERATING / GENERATED / GENERATE_FAILED / EXECUTING / CLOSED */
     private String status;
 
+    /** 生成模式: PROCEDURE_COPY(直接拷贝规程) / AI_ADAPT(AI基于规程微调) / AI_GENERATE(AI从零生成) */
+    private String generateMode;
+
     /** 步骤总数（冗余） */
     private Integer stepCount;
 
@@ -58,6 +61,12 @@ public class MaintenanceTask implements Serializable {
     /** AI提取的图谱线索（生成步骤时顺带提取，沉淀时供管理员确认） */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Object graphExtraction;
+
+    /** 是否已沉淀为标准规程 */
+    private Boolean promotedProcedure;
+
+    /** 是否已沉淀到知识图谱 */
+    private Boolean promotedGraph;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

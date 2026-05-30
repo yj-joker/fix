@@ -293,3 +293,16 @@ ALTER TABLE task_step_record
 -- =============================================
 ALTER TABLE maintenance_task
     ADD COLUMN `graph_extraction` JSON DEFAULT NULL COMMENT 'AI提取的图谱线索(设备/部件/故障/方案)，沉淀时供管理员确认';
+
+-- =============================================
+-- Phase 5: AI增强规程（生成模式标记）
+-- =============================================
+ALTER TABLE maintenance_task
+    ADD COLUMN `generate_mode` VARCHAR(20) DEFAULT NULL COMMENT '生成模式: PROCEDURE_COPY(直接拷贝) / AI_ADAPT(AI基于规程微调) / AI_GENERATE(AI从零生成)';
+
+-- =============================================
+-- Phase 6: 知识沉淀标记
+-- =============================================
+ALTER TABLE maintenance_task
+    ADD COLUMN `promoted_procedure` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否已沉淀为标准规程',
+    ADD COLUMN `promoted_graph`     TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否已沉淀到知识图谱';

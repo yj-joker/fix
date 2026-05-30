@@ -46,7 +46,7 @@ public class TaskStepRecord implements Serializable {
     /** 预估耗时(分钟) */
     private Integer estimatedMinutes;
 
-    /** PENDING / COMPLETED / SKIPPED */
+    /** PENDING / SUBMITTED / AI_PASSED / AI_REJECTED / COMPLETED / SKIPPED */
     private String status;
 
     /** 工人上传的照片 */

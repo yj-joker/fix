@@ -1,5 +1,6 @@
 package ai.weixiu.controller;
 
+import ai.weixiu.annotation.RequireAdmin;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.MaintenanceTaskDTO;
@@ -59,6 +60,17 @@ public class MaintenanceTaskController {
         return Result.success(vo);
     }
 
+    /** 工人强制完成步骤（AI验证未通过时，工人确认无误可强制完成） */
+    @PostMapping("/{taskId}/steps/{stepId}/force-complete")
+    public Result<TaskStepRecordVO> forceCompleteStep(
+            @PathVariable Long taskId,
+            @PathVariable Long stepId,
+            @RequestBody Map<String, Object> body) {
+        String reason = (String) body.getOrDefault("reason", "");
+        TaskStepRecordVO vo = taskService.forceCompleteStep(taskId, stepId, reason);
+        return Result.success(vo);
+    }
+
     /** 查询任务详情（含步骤列表） */
     @GetMapping("/{taskId}")
     public Result<MaintenanceTaskVO> getTaskDetail(@PathVariable Long taskId) {
@@ -81,6 +93,7 @@ public class MaintenanceTaskController {
     }
 
     /** 沉淀为标准规程（CLOSED → 创建 StandardProcedure，返回规程ID） */
+    @RequireAdmin
     @PostMapping("/{taskId}/promote")
     public Result<Long> promoteToStandardProcedure(@PathVariable Long taskId) {
         Long operatorId = BaseContext.getCurrentId();
@@ -89,6 +102,7 @@ public class MaintenanceTaskController {
     }
 
     /** 沉淀到知识图谱（CLOSED → 创建图谱节点，管理员确认后提交） */
+    @RequireAdmin
     @PostMapping("/{taskId}/promote-to-graph")
     public Result<Void> promoteToGraph(
             @PathVariable Long taskId,
