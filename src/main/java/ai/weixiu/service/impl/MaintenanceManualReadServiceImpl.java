@@ -1,15 +1,23 @@
 package ai.weixiu.service.impl;
 
 import ai.weixiu.common.RedisKey;
+import ai.weixiu.entity.MaintenanceManual;
+import ai.weixiu.entity.ManualReadRecord;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.NullException;
+import ai.weixiu.mapper.ManualReadRecordMapper;
+import ai.weixiu.pojo.PageResult;
+import ai.weixiu.pojo.vo.ManualReadHistoryVO;
 import ai.weixiu.pojo.vo.MaintenanceManualReadHeartbeatVO;
 import ai.weixiu.pojo.vo.MaintenanceManualReadStartVO;
 import ai.weixiu.service.MaintenanceManualRankService;
 import ai.weixiu.service.MaintenanceManualReadService;
 import ai.weixiu.service.MaintenanceManualService;
 import ai.weixiu.utils.BaseContext;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,18 +30,21 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Service
 @AllArgsConstructor
 /**
  * 维修手册阅读会话与心跳累计服务。
  *
- * <p>单次阅读会话可以很短，但阅读时长累计按“用户 + 手册 + 当天”保存。
+ * <p>单次阅读会话可以很短，但阅读时长累计按”用户 + 手册 + 当天”保存。
  * 这样用户一天内多次短时查看同一本手册，也能逐步累计到 60 秒有效阅读阈值。</p>
  */
 public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadService {
@@ -64,6 +75,9 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
     /** 阅读达到阈值且抢到当天计榜标记后，调用它更新各周期榜单。 */
     private final MaintenanceManualRankService maintenanceManualRankService;
 
+    /** 阅读记录持久化。 */
+    private final ManualReadRecordMapper manualReadRecordMapper;
+
     @Override
     /**
      * 创建一次阅读会话。
@@ -91,6 +105,10 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
         String sessionKey = RedisKey.MANUAL_READ_SESSION + readSessionId;
         stringRedisTemplate.opsForHash().putAll(sessionKey, session);
         stringRedisTemplate.expire(sessionKey, READ_SESSION_TTL);
+
+        // 持久化阅读记录：首次 INSERT，重复打开 UPDATE last_read_at
+        recordReadHistory(userId, manualId);
+
         return new MaintenanceManualReadStartVO(readSessionId, HEARTBEAT_INTERVAL_SECONDS, VALID_READ_THRESHOLD_SECONDS);
     }
 
@@ -240,5 +258,65 @@ public class MaintenanceManualReadServiceImpl implements MaintenanceManualReadSe
         LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
         LocalDateTime tomorrow = LocalDateTime.of(LocalDate.now(BUSINESS_ZONE).plusDays(1), LocalTime.MIDNIGHT);
         return Duration.between(now, tomorrow).plusHours(1);
+    }
+
+    // ==================== 阅读历史 ====================
+
+    /**
+     * 记录一次阅读：首次 INSERT，重复打开 UPDATE last_read_at。
+     */
+    private void recordReadHistory(Long userId, Long manualId) {
+        try {
+            ManualReadRecord existing = manualReadRecordMapper.selectOne(
+                    Wrappers.<ManualReadRecord>lambdaQuery()
+                            .eq(ManualReadRecord::getUserId, userId)
+                            .eq(ManualReadRecord::getManualId, manualId));
+
+            LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+            if (existing == null) {
+                ManualReadRecord record = new ManualReadRecord()
+                        .setUserId(userId)
+                        .setManualId(manualId)
+                        .setLastReadAt(now);
+                manualReadRecordMapper.insert(record);
+            } else {
+                existing.setLastReadAt(now);
+                manualReadRecordMapper.updateById(existing);
+            }
+        } catch (Exception e) {
+            // 阅读记录写入失败不应影响阅读会话的正常创建
+            log.warn("阅读记录写入失败: userId={}, manualId={}, error={}", userId, manualId, e.getMessage());
+        }
+    }
+
+    @Override
+    public PageResult<ManualReadHistoryVO> getReadHistory(Integer page, Integer size) {
+        Long userId = currentUserId();
+        int pageNum = (page == null || page <= 0) ? 1 : page;
+        int pageSize = (size == null || size <= 0) ? 10 : Math.min(size, 50);
+
+        Page<ManualReadRecord> recordPage = manualReadRecordMapper.selectPage(
+                new Page<>(pageNum, pageSize),
+                Wrappers.<ManualReadRecord>lambdaQuery()
+                        .eq(ManualReadRecord::getUserId, userId)
+                        .orderByDesc(ManualReadRecord::getLastReadAt));
+
+        List<ManualReadHistoryVO> voList = new ArrayList<>();
+        for (ManualReadRecord record : recordPage.getRecords()) {
+            try {
+                MaintenanceManual manual = maintenanceManualService.getManualById(record.getManualId());
+                ManualReadHistoryVO vo = new ManualReadHistoryVO();
+                vo.setManualId(manual.getId());
+                vo.setManualName(manual.getManualName());
+                vo.setManualImage(manual.getManualImage());
+                vo.setManualDesc(manual.getManualDesc());
+                vo.setLastReadAt(record.getLastReadAt());
+                voList.add(vo);
+            } catch (NotFoundException ignored) {
+                // 手册已删除，跳过
+            }
+        }
+
+        return new PageResult<>(voList, recordPage.getTotal(), pageNum, pageSize);
     }
 }

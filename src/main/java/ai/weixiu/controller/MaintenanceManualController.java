@@ -9,6 +9,7 @@ import ai.weixiu.pojo.dto.MaintenanceManualDTO;
 import ai.weixiu.pojo.dto.MaintenanceManualReadHeartbeatDTO;
 import ai.weixiu.pojo.dto.MaintenanceManualReadStartDTO;
 import ai.weixiu.pojo.query.MaintenanceManualQuery;
+import ai.weixiu.pojo.vo.ManualReadHistoryVO;
 import ai.weixiu.pojo.vo.ManualRecommendVO;
 import ai.weixiu.pojo.vo.MaintenanceManualRankVO;
 import ai.weixiu.pojo.vo.MaintenanceManualReadHeartbeatVO;
@@ -121,6 +122,15 @@ public class MaintenanceManualController {
     /** 接收前端周期心跳，累计服务端认可的阅读秒数。 */
     public Result<MaintenanceManualReadHeartbeatVO> heartbeat(@RequestBody MaintenanceManualReadHeartbeatDTO heartbeatDTO) {
         return Result.success(maintenanceManualReadService.heartbeat(heartbeatDTO.getReadSessionId()));
+    }
+
+    @GetMapping("/read/history")
+    @Operation(summary = "查询阅读历史")
+    /** 当前用户的最近浏览记录，按最近打开时间倒序分页。 */
+    public Result<PageResult<ManualReadHistoryVO>> readHistory(
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer size) {
+        return Result.success(maintenanceManualReadService.getReadHistory(page, size));
     }
 
     @GetMapping("/recommend")

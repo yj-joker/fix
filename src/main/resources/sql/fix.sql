@@ -270,7 +270,21 @@ CREATE TABLE IF NOT EXISTS `procedure_step` (
 
 
 -- =============================================
--- 12. 手册-设备关联表（多对多）
+-- 13. 手册阅读记录表（用户维度聚合）
+-- =============================================
+CREATE TABLE IF NOT EXISTS `manual_read_record` (
+    `id`           BIGINT   NOT NULL COMMENT '雪花ID',
+    `user_id`      BIGINT   NOT NULL COMMENT '用户ID',
+    `manual_id`    BIGINT   NOT NULL COMMENT '手册ID（maintenance_manual.id）',
+    `last_read_at` DATETIME NOT NULL COMMENT '最近一次打开时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_manual` (`user_id`, `manual_id`),
+    INDEX `idx_user_last_read` (`user_id`, `last_read_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '手册阅读记录表';
+
+
+-- =============================================
+-- 14. 手册-设备关联表（多对多）
 -- =============================================
 CREATE TABLE IF NOT EXISTS `manual_device` (
     `id`          BIGINT       NOT NULL COMMENT '雪花ID',

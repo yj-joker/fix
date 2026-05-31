@@ -3,10 +3,12 @@ package ai.weixiu.service.impl;
 import ai.weixiu.entity.KnowledgeDocument;
 import ai.weixiu.entity.MaintenanceManual;
 import ai.weixiu.entity.ManualDevice;
+import ai.weixiu.entity.ManualReadRecord;
 import ai.weixiu.enumerate.BucketEnum;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.NullException;
 import ai.weixiu.mapper.ManualDeviceMapper;
+import ai.weixiu.mapper.ManualReadRecordMapper;
 import ai.weixiu.mapper.MaintenanceManualMapper;
 import ai.weixiu.mq.KnowledgeImportProducer;
 import ai.weixiu.pojo.PageResult;
@@ -53,6 +55,7 @@ public class MaintenanceManualServiceImpl
     private final KnowledgeDocumentService knowledgeDocumentService;
     private final KnowledgeImportProducer knowledgeImportProducer;
     private final ManualDeviceMapper manualDeviceMapper;
+    private final ManualReadRecordMapper manualReadRecordMapper;
 
     @Override
     @Transactional
@@ -104,6 +107,10 @@ public class MaintenanceManualServiceImpl
         // 删除手册-设备关联
         manualDeviceMapper.delete(new LambdaQueryWrapper<ManualDevice>()
                 .eq(ManualDevice::getManualId, id));
+
+        // 删除阅读记录
+        manualReadRecordMapper.delete(new LambdaQueryWrapper<ManualReadRecord>()
+                .eq(ManualReadRecord::getManualId, id));
 
         removeById(id);
         log.info("删除手册成功: {}, 共删除 {} 个版本", id, versions.size());
