@@ -1,17 +1,20 @@
 package ai.weixiu.service.impl;
 
-import ai.weixiu.common.RedisKey;
+import ai.weixiu.entity.Device;
 import ai.weixiu.entity.KnowledgeDocument;
 import ai.weixiu.entity.MaintenanceManual;
+import ai.weixiu.entity.ManualDevice;
 import ai.weixiu.enumerate.BucketEnum;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.NullException;
+import ai.weixiu.mapper.ManualDeviceMapper;
 import ai.weixiu.mapper.MaintenanceManualMapper;
 import ai.weixiu.mq.KnowledgeImportProducer;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.MaintenanceManualDTO;
 import ai.weixiu.pojo.query.MaintenanceManualQuery;
 import ai.weixiu.pojo.vo.MaintenanceManualVO;
+import ai.weixiu.service.DeviceService;
 import ai.weixiu.service.KnowledgeDocumentService;
 import ai.weixiu.service.MaintenanceManualService;
 import ai.weixiu.service.MioIOUpLoadService;
@@ -22,23 +25,19 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
 import org.springframework.beans.BeanUtils;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 
 @Service
 @AllArgsConstructor
@@ -50,17 +49,14 @@ public class MaintenanceManualServiceImpl
     /** 手册不存在提示。 */
     private static final String MANUAL_NOT_FOUND = "维修手册不存在";
 
-    /** Redis 中的空值占位符，用于缓存不存在的手册 id，降低穿透压力。 */
-    private static final String EMPTY_CACHE_VALUE = "__NULL__";
-
     /** 私有桶文档预签名地址有效时长（分钟）。 */
     private static final int PRIVATE_FILE_URL_EXPIRY_MINUTES = 120;
 
     private final MioIOUpLoadService mioIOUpLoadService;
-    private final RedisTemplate<String, Object> redisTemplate;
-    private final RedissonClient redissonClient;
     private final KnowledgeDocumentService knowledgeDocumentService;
     private final KnowledgeImportProducer knowledgeImportProducer;
+    private final ManualDeviceMapper manualDeviceMapper;
+    private final DeviceService deviceService;
 
     @Override
     @Transactional
@@ -75,9 +71,11 @@ public class MaintenanceManualServiceImpl
         manual.setCreatedAt(now);
         manual.setUpdatedAt(now);
         save(manual);
-        evictManualCache(manual.getId());
 
-        // 2. 上传第一版文档（文件信息将在 onParseSuccess 回调中统一回写到 manual）
+        // 2. 保存手册-设备关联
+        saveDeviceAssociations(manual.getId(), maintenanceManualDTO.getDeviceIds());
+
+        // 3. 上传第一版文档（文件信息将在 onParseSuccess 回调中统一回写到 manual）
         knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
 
         log.info("新增手册成功: {}, 已发起 v1 解析", manual.getId());
@@ -110,8 +108,11 @@ public class MaintenanceManualServiceImpl
             minioObjectsToDelete.add(manual.getMinioObjectName());
         }
 
+        // 删除手册-设备关联
+        manualDeviceMapper.delete(new LambdaQueryWrapper<ManualDevice>()
+                .eq(ManualDevice::getManualId, id));
+
         removeById(id);
-        evictManualCache(id);
         log.info("删除手册成功: {}, 共删除 {} 个版本", id, versions.size());
 
         // 事务提交后再执行不可逆的副作用（MQ 消息 + MinIO 文件删除）
@@ -158,12 +159,18 @@ public class MaintenanceManualServiceImpl
 
         manual.setUpdatedAt(LocalDateTime.now());
         updateById(manual);
-        evictManualCache(manual.getId());
 
-        // 有新文件时上传新版本（uploadNewVersion 内部已设 status=2 并写库+清缓存）
+        // 更新设备关联（前端传了 deviceIds 才更新，null 表示不修改）
+        if (maintenanceManualDTO.getDeviceIds() != null) {
+            // 先删旧关联再插新关联
+            manualDeviceMapper.delete(new LambdaQueryWrapper<ManualDevice>()
+                    .eq(ManualDevice::getManualId, manual.getId()));
+            saveDeviceAssociations(manual.getId(), maintenanceManualDTO.getDeviceIds());
+        }
+
+        // 有新文件时上传新版本
         if (file != null && !file.isEmpty()) {
             knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
-            evictManualCache(manual.getId());
             log.info("更新手册并上传新版本: {}", manual.getId());
         } else {
             log.info("更新手册元数据: {}", manual.getId());
@@ -177,42 +184,11 @@ public class MaintenanceManualServiceImpl
         if (id == null) {
             throw new NullException("手册 ID 不能为空");
         }
-        String cacheKey = RedisKey.MANUAL_DETAIL + id;
-
-        // 缓存命中时直接返回；命中空值标记则抛出不存在异常
-        Object cachedValue = redisTemplate.opsForValue().get(cacheKey);
-        MaintenanceManual cachedManual = parseManualCache(cachedValue);
-        if (cachedManual != null) {
-            return cachedManual;
+        MaintenanceManual manual = getById(id);
+        if (manual == null) {
+            throw new NotFoundException(MANUAL_NOT_FOUND);
         }
-
-        // 分布式锁保护缓存重建，防止击穿
-        RLock lock = redissonClient.getLock(RedisKey.MANUAL_DETAIL_LOCK + id);
-        boolean locked = false;
-        try {
-            locked = lock.tryLock(2, 10, TimeUnit.SECONDS);
-            if (locked) {
-                cachedValue = redisTemplate.opsForValue().get(cacheKey);
-                cachedManual = parseManualCache(cachedValue);
-                if (cachedManual != null) {
-                    return cachedManual;
-                }
-                return loadManualToCache(id, cacheKey);
-            }
-            cachedValue = redisTemplate.opsForValue().get(cacheKey);
-            cachedManual = parseManualCache(cachedValue);
-            if (cachedManual != null) {
-                return cachedManual;
-            }
-            return loadManualToCache(id, cacheKey);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("获取手册缓存锁被中断", e);
-        } finally {
-            if (locked && lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
+        return manual;
     }
 
     @Override
@@ -263,6 +239,18 @@ public class MaintenanceManualServiceImpl
         List<KnowledgeDocument> versions = knowledgeDocumentService.listVersions(id);
         vo.setTotalVersions(versions.size());
 
+        // 关联设备
+        List<ManualDevice> manualDevices = manualDeviceMapper.selectList(
+                new LambdaQueryWrapper<ManualDevice>().eq(ManualDevice::getManualId, id));
+        List<MaintenanceManualVO.DeviceSimple> deviceList = new ArrayList<>();
+        for (ManualDevice md : manualDevices) {
+            MaintenanceManualVO.DeviceSimple ds = new MaintenanceManualVO.DeviceSimple();
+            ds.setDeviceId(md.getDeviceId());
+            ds.setDeviceName(md.getDeviceName());
+            deviceList.add(ds);
+        }
+        vo.setDevices(deviceList);
+
         return vo;
     }
 
@@ -279,44 +267,30 @@ public class MaintenanceManualServiceImpl
         return new PageResult<>(result.getRecords(), result.getTotal(), pageNum, pageSize);
     }
 
-    // ===== 缓存逻辑 =====
+    // ===== 设备关联 =====
 
-    /** 解析 Redis 中的详情缓存值。 */
-    private MaintenanceManual parseManualCache(Object cachedValue) {
-        if (cachedValue == null) return null;
-        if (EMPTY_CACHE_VALUE.equals(cachedValue)) {
-            throw new NotFoundException(MANUAL_NOT_FOUND);
+    /**
+     * 保存手册-设备关联。
+     * 查询 Neo4j 获取设备名称冗余存储，避免推荐时频繁查图谱。
+     */
+    private void saveDeviceAssociations(Long manualId, List<String> deviceIds) {
+        if (CollectionUtils.isEmpty(deviceIds)) {
+            return;
         }
-        if (cachedValue instanceof MaintenanceManual m) return m;
-        log.warn("忽略不受支持的手册缓存值: {}", cachedValue.getClass().getName());
-        return null;
-    }
+        LocalDateTime now = LocalDateTime.now();
+        for (String deviceId : deviceIds) {
+            // 查设备名称
+            String deviceName = deviceService.findById(deviceId)
+                    .map(Device::getName)
+                    .orElse(null);
 
-    /** 从数据库加载手册并回填缓存。 */
-    private MaintenanceManual loadManualToCache(Long id, String cacheKey) {
-        MaintenanceManual manual = getById(id);
-        if (manual == null) {
-            // 不存在的手册写入短期空值缓存，防穿透
-            redisTemplate.opsForValue().set(cacheKey, EMPTY_CACHE_VALUE, emptyCacheTtl());
-            throw new NotFoundException(MANUAL_NOT_FOUND);
+            ManualDevice md = new ManualDevice();
+            md.setManualId(manualId);
+            md.setDeviceId(deviceId);
+            md.setDeviceName(deviceName);
+            md.setCreatedAt(now);
+            manualDeviceMapper.insert(md);
         }
-        // 正常缓存加随机 TTL 防雪崩
-        redisTemplate.opsForValue().set(cacheKey, manual, manualCacheTtl());
-        return manual;
-    }
-
-    /** 删除指定手册的详情缓存。 */
-    private void evictManualCache(Long id) {
-        redisTemplate.delete(RedisKey.MANUAL_DETAIL + id);
-    }
-
-    /** 正常详情缓存 TTL：30-40 分钟随机，防雪崩。 */
-    private Duration manualCacheTtl() {
-        return Duration.ofMinutes(30 + ThreadLocalRandom.current().nextInt(11));
-    }
-
-    /** 空值缓存 TTL：60-180 秒随机，兼顾防穿透和新数据可见性。 */
-    private Duration emptyCacheTtl() {
-        return Duration.ofSeconds(60 + ThreadLocalRandom.current().nextInt(121));
+        log.info("手册设备关联保存完成: manualId={}, 设备数={}", manualId, deviceIds.size());
     }
 }

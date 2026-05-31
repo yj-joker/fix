@@ -1,6 +1,5 @@
 package ai.weixiu.service.impl;
 
-import ai.weixiu.common.RedisKey;
 import ai.weixiu.entity.KnowledgeDocument;
 import ai.weixiu.entity.MaintenanceManual;
 import ai.weixiu.enumerate.BucketEnum;
@@ -20,7 +19,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -56,7 +54,6 @@ public class KnowledgeDocumentServiceImpl
     private final MaintenanceManualMapper manualMapper;
     private final MioIOUpLoadService mioIOUpLoadService;
     private final KnowledgeImportProducer knowledgeImportProducer;
-    private final RedisTemplate<String, Object> redisTemplate;
     private final RedissonClient redissonClient;
 
     @Override
@@ -137,7 +134,6 @@ public class KnowledgeDocumentServiceImpl
         manual.setStatus(2);
         manual.setUpdatedAt(now);
         manualMapper.updateById(manual);
-        evictManualCache(manualId);
 
         // 生成文件预签名 URL 给 Python 下载
         String fileUrl = mioIOUpLoadService.getPresignedUrl(objectName, BucketEnum.PRIVATE, 120);
@@ -242,7 +238,6 @@ public class KnowledgeDocumentServiceImpl
                     });
                 }
             }
-            evictManualCache(manual.getId());
         }
 
         log.info("解析成功: documentId={}, version={}, text={}, image={}, table={}",
@@ -270,7 +265,6 @@ public class KnowledgeDocumentServiceImpl
             }
             manual.setUpdatedAt(LocalDateTime.now());
             manualMapper.updateById(manual);
-            evictManualCache(manual.getId());
         }
 
         log.error("解析失败: documentId={}, error={}", documentId, errorMessage);
@@ -300,10 +294,6 @@ public class KnowledgeDocumentServiceImpl
             throw new NotFoundException("文档版本不存在: " + documentId);
         }
         return doc;
-    }
-
-    private void evictManualCache(Long manualId) {
-        redisTemplate.delete(RedisKey.MANUAL_DETAIL + manualId);
     }
 
     private void validateFile(MultipartFile file) {

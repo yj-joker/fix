@@ -110,4 +110,30 @@ public interface DeviceRepository extends Neo4jRepository<Device, String> {
                          RETURN  count(d) AS total
             """)
     Long getDeviceTotal(@Param("keyword") String keyword);
+
+    /**
+     * 根据位置查询该位置下所有设备的 ID 列表。
+     * 用于个性化推荐：同场地设备 → 手册扩展推荐。
+     */
+    @Query("""
+            MATCH (d:Device)
+            WHERE d.location = $location
+            RETURN d.id AS id
+            """)
+    List<String> findDeviceIdsByLocation(@Param("location") String location);
+
+    /**
+     * 根据设备 ID 列表批量查询设备的 location。
+     */
+    @Query("""
+            MATCH (d:Device)
+            WHERE d.id IN $deviceIds
+            RETURN d.id AS id, d.location AS location
+            """)
+    List<DeviceLocationProjection> findLocationsByDeviceIds(@Param("deviceIds") List<String> deviceIds);
+
+    interface DeviceLocationProjection {
+        String getId();
+        String getLocation();
+    }
 }

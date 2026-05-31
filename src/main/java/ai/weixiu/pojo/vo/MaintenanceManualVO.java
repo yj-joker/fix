@@ -63,4 +63,14 @@ public class MaintenanceManualVO {
 
     /** 当前可用版本的入库表格数。 */
     private Integer tableCount;
+
+    /** 关联的设备列表（设备ID + 设备名称）。 */
+    private java.util.List<DeviceSimple> devices;
+
+    /** 关联设备的简要信息。 */
+    @lombok.Data
+    public static class DeviceSimple {
+        private String deviceId;
+        private String deviceName;
+    }
 }

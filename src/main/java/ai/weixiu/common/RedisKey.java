@@ -7,18 +7,6 @@ public class RedisKey {
         public static final String CONSOLIDATION_LOCK = "Memory:Consolidation:Lock:";
 
         /**
-         * 维修手册详情缓存前缀。
-         * <p>完整 key 为 {@code Maintenance:Manual:Detail:{manualId}}，值为手册基础信息或空值占位符。</p>
-         */
-        public static final String MANUAL_DETAIL = "Maintenance:Manual:Detail:";
-
-        /**
-         * 维修手册详情缓存重建锁前缀。
-         * <p>每本手册单独加锁，避免热点详情缓存失效后大量请求同时回源数据库。</p>
-         */
-        public static final String MANUAL_DETAIL_LOCK = "Maintenance:Manual:Detail:Lock:";
-
-        /**
          * 阅读会话缓存前缀。
          * <p>完整 key 后拼接 readSessionId，Hash 中保存 userId、manualId 和最近一次心跳时间。</p>
          */

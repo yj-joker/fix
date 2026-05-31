@@ -267,3 +267,19 @@ CREATE TABLE IF NOT EXISTS `procedure_step` (
     PRIMARY KEY (`id`),
     KEY `idx_procedure_order` (`procedure_id`, `step_order`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '规程步骤模板表';
+
+
+-- =============================================
+-- 12. 手册-设备关联表（多对多）
+-- =============================================
+CREATE TABLE IF NOT EXISTS `manual_device` (
+    `id`          BIGINT       NOT NULL COMMENT '雪花ID',
+    `manual_id`   BIGINT       NOT NULL COMMENT '手册ID（maintenance_manual.id）',
+    `device_id`   VARCHAR(64)  NOT NULL COMMENT '设备ID（Neo4j Device 节点 UUID）',
+    `device_name` VARCHAR(200) DEFAULT NULL COMMENT '设备名称（冗余，避免每次查图谱）',
+    `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_manual_device` (`manual_id`, `device_id`),
+    INDEX `idx_device_id` (`device_id`),
+    INDEX `idx_manual_id` (`manual_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '手册-设备关联表';
