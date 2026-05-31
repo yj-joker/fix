@@ -23,6 +23,8 @@ import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
@@ -105,15 +107,6 @@ public class KnowledgeDocumentServiceImpl
         ).stream().findFirst().map(o -> (Integer) o).orElse(0);
         int newVersion = maxVersion + 1;
 
-        // 查找当前 active 版本的 documentId，用于通知 Python 删除旧向量
-        String oldDocumentId = null;
-        if (manual.getActiveDocumentId() != null) {
-            KnowledgeDocument activeDoc = getById(manual.getActiveDocumentId());
-            if (activeDoc != null) {
-                oldDocumentId = activeDoc.getDocumentId();
-            }
-        }
-
         // 上传文件到 MinIO 私有桶
         String objectName = mioIOUpLoadService.getObjectName(file, BucketEnum.PRIVATE.getName());
 
@@ -140,7 +133,7 @@ public class KnowledgeDocumentServiceImpl
         doc.setUpdatedAt(now);
         save(doc);
 
-        // 更新手册状态为"处理中"
+        // 更新手册状态为"处理中"（不改 activeDocumentId，旧版本继续可用）
         manual.setStatus(2);
         manual.setUpdatedAt(now);
         manualMapper.updateById(manual);
@@ -149,21 +142,26 @@ public class KnowledgeDocumentServiceImpl
         // 生成文件预签名 URL 给 Python 下载
         String fileUrl = mioIOUpLoadService.getPresignedUrl(objectName, BucketEnum.PRIVATE, 120);
 
-        // 发送 MQ 消息，携带旧版本 documentId 用于 Python 端先删旧向量
-        knowledgeImportProducer.sendImportTask(
-                documentId,
-                fileUrl,
-                doc.getFileType().replace(".", ""),
-                null,
-                BaseContext.getCurrentId(),
-                "v" + newVersion,
-                null,
-                null,
-                oldDocumentId
-        );
+        log.info("上传新版本: manualId={}, version={}, documentId={}", manualId, newVersion, documentId);
 
-        log.info("上传新版本: manualId={}, version={}, documentId={}, oldDocumentId={}",
-                manualId, newVersion, documentId, oldDocumentId);
+        // 事务提交后再发送 MQ 消息（不携带 oldDocumentId，旧向量由 onParseSuccess 成功后再删）
+        final Long currentUserId = BaseContext.getCurrentId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                knowledgeImportProducer.sendImportTask(
+                        documentId,
+                        fileUrl,
+                        doc.getFileType().replace(".", ""),
+                        null,
+                        currentUserId,
+                        "v" + newVersion,
+                        null,
+                        null,
+                        null
+                );
+            }
+        });
         return doc;
     }
 
@@ -180,18 +178,75 @@ public class KnowledgeDocumentServiceImpl
         doc.setUpdatedAt(LocalDateTime.now());
         updateById(doc);
 
-        // 切换 maintenance_manual 的 active 版本
+        // 切换 maintenance_manual 的 active 版本（仅当回调版本 >= 当前 active 版本时才切换）
         MaintenanceManual manual = manualMapper.selectById(doc.getManualId());
         if (manual != null) {
-            manual.setActiveDocumentId(doc.getId());
-            manual.setStatus(1);
-            manual.setUpdatedAt(LocalDateTime.now());
-            manualMapper.updateById(manual);
+            boolean shouldActivate = true;
+            String oldDocumentId = null;
+            String oldMinioObjectName = null;
+
+            if (manual.getActiveDocumentId() != null) {
+                KnowledgeDocument activeDoc = getById(manual.getActiveDocumentId());
+                if (activeDoc != null) {
+                    if (activeDoc.getVersion() > doc.getVersion()) {
+                        // 当前 active 版本比回调的版本更新，不切换
+                        shouldActivate = false;
+                        log.info("跳过 active 切换: 当前 active v{} > 回调 v{}, documentId={}",
+                                activeDoc.getVersion(), doc.getVersion(), documentId);
+                    } else {
+                        // 记录旧版本信息，成功切换后再清理
+                        oldDocumentId = activeDoc.getDocumentId();
+                        oldMinioObjectName = activeDoc.getMinioObjectName();
+                    }
+                }
+            }
+
+            if (shouldActivate) {
+                // 切换 active 版本
+                manual.setActiveDocumentId(doc.getId());
+                manual.setStatus(1);
+                // 回写新版本的文件信息到 maintenance_manual
+                manual.setFileName(doc.getFileName());
+                manual.setFileType(doc.getFileType());
+                manual.setFileSize(doc.getFileSize());
+                manual.setMinioObjectName(doc.getMinioObjectName());
+                manual.setUpdatedAt(LocalDateTime.now());
+                manualMapper.updateById(manual);
+
+                // 事务提交后清理旧版本资源（向量 + MinIO 文件）
+                final String finalOldDocumentId = oldDocumentId;
+                final String finalOldMinioObjectName = oldMinioObjectName;
+                if (finalOldDocumentId != null || finalOldMinioObjectName != null) {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            // 删除旧版本向量
+                            if (finalOldDocumentId != null) {
+                                try {
+                                    knowledgeImportProducer.sendDeleteTask(finalOldDocumentId);
+                                    log.info("已发送旧版本向量删除任务: oldDocumentId={}", finalOldDocumentId);
+                                } catch (Exception e) {
+                                    log.warn("发送旧版本向量删除消息失败: oldDocumentId={}", finalOldDocumentId, e);
+                                }
+                            }
+                            // 删除旧版本 MinIO 文件
+                            if (finalOldMinioObjectName != null) {
+                                try {
+                                    mioIOUpLoadService.delete(finalOldMinioObjectName, BucketEnum.PRIVATE);
+                                    log.info("已删除旧版本 MinIO 文件: {}", finalOldMinioObjectName);
+                                } catch (Exception e) {
+                                    log.warn("删除旧版本 MinIO 文件失败: {}", finalOldMinioObjectName, e);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
             evictManualCache(manual.getId());
         }
 
-        log.info("解析成功: documentId={}, text={}, image={}, table={}",
-                documentId, doc.getTextCount(), doc.getImageCount(), doc.getTableCount());
+        log.info("解析成功: documentId={}, version={}, text={}, image={}, table={}",
+                documentId, doc.getVersion(), doc.getTextCount(), doc.getImageCount(), doc.getTableCount());
     }
 
     @Override

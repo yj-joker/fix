@@ -28,6 +28,8 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -75,16 +77,8 @@ public class MaintenanceManualServiceImpl
         save(manual);
         evictManualCache(manual.getId());
 
-        // 2. 上传第一版文档
-        KnowledgeDocument doc = knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
-
-        // 3. 将文件信息回写到 manual，保证返回给前端的数据完整
-        manual.setFileName(doc.getFileName());
-        manual.setFileType(doc.getFileType());
-        manual.setFileSize(doc.getFileSize());
-        manual.setMinioObjectName(doc.getMinioObjectName());
-        updateById(manual);
-        evictManualCache(manual.getId());
+        // 2. 上传第一版文档（文件信息将在 onParseSuccess 回调中统一回写到 manual）
+        knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
 
         log.info("新增手册成功: {}, 已发起 v1 解析", manual.getId());
         return manual;
@@ -95,41 +89,51 @@ public class MaintenanceManualServiceImpl
     public void deleteById(Long id) {
         MaintenanceManual manual = getManualById(id);
 
-        // 删除所有版本的文档记录、MinIO 文件，并通知 Python 清理向量
+        // 收集需要在事务提交后清理的资源信息
         List<KnowledgeDocument> versions = knowledgeDocumentService.listVersions(id);
-        for (KnowledgeDocument doc : versions) {
-            // 通知 Python 删除该版本在向量库中的所有数据
-            if (StringUtils.hasText(doc.getDocumentId())) {
-                try {
-                    knowledgeImportProducer.sendDeleteTask(doc.getDocumentId());
-                } catch (Exception e) {
-                    log.warn("发送向量删除消息失败: documentId={}", doc.getDocumentId(), e);
-                }
-            }
+        List<String> documentIdsToDelete = new java.util.ArrayList<>();
+        List<String> minioObjectsToDelete = new java.util.ArrayList<>();
 
-            // 删除 MinIO 私有桶中的源文件
-            if (StringUtils.hasText(doc.getMinioObjectName())) {
-                try {
-                    mioIOUpLoadService.delete(doc.getMinioObjectName(), BucketEnum.PRIVATE);
-                } catch (Exception e) {
-                    log.warn("删除 MinIO 文件失败: {}", doc.getMinioObjectName(), e);
-                }
+        for (KnowledgeDocument doc : versions) {
+            if (StringUtils.hasText(doc.getDocumentId())) {
+                documentIdsToDelete.add(doc.getDocumentId());
             }
+            if (StringUtils.hasText(doc.getMinioObjectName())) {
+                minioObjectsToDelete.add(doc.getMinioObjectName());
+            }
+            // 事务内只做 DB 删除
             knowledgeDocumentService.removeById(doc.getId());
         }
 
-        // 兼容旧数据：删除旧字段指向的 MinIO 文件
+        // 兼容旧数据：旧字段指向的 MinIO 文件也需要清理
         if (StringUtils.hasText(manual.getMinioObjectName())) {
-            try {
-                mioIOUpLoadService.delete(manual.getMinioObjectName(), BucketEnum.PRIVATE);
-            } catch (Exception e) {
-                log.warn("删除旧 MinIO 文件失败: {}", manual.getMinioObjectName(), e);
-            }
+            minioObjectsToDelete.add(manual.getMinioObjectName());
         }
 
         removeById(id);
         evictManualCache(id);
         log.info("删除手册成功: {}, 共删除 {} 个版本", id, versions.size());
+
+        // 事务提交后再执行不可逆的副作用（MQ 消息 + MinIO 文件删除）
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                for (String documentId : documentIdsToDelete) {
+                    try {
+                        knowledgeImportProducer.sendDeleteTask(documentId);
+                    } catch (Exception e) {
+                        log.warn("发送向量删除消息失败: documentId={}", documentId, e);
+                    }
+                }
+                for (String objectName : minioObjectsToDelete) {
+                    try {
+                        mioIOUpLoadService.delete(objectName, BucketEnum.PRIVATE);
+                    } catch (Exception e) {
+                        log.warn("删除 MinIO 文件失败: {}", objectName, e);
+                    }
+                }
+            }
+        });
     }
 
     @Override
@@ -156,11 +160,10 @@ public class MaintenanceManualServiceImpl
         updateById(manual);
         evictManualCache(manual.getId());
 
-        // 有新文件时上传新版本
+        // 有新文件时上传新版本（uploadNewVersion 内部已设 status=2 并写库+清缓存）
         if (file != null && !file.isEmpty()) {
             knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
-            manual.setStatus(2); // 处理中
-            updateById(manual);
+            evictManualCache(manual.getId());
             log.info("更新手册并上传新版本: {}", manual.getId());
         } else {
             log.info("更新手册元数据: {}", manual.getId());

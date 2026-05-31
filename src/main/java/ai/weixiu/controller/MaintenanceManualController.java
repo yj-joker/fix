@@ -1,5 +1,6 @@
 package ai.weixiu.controller;
 
+import ai.weixiu.annotation.RequireAdmin;
 import ai.weixiu.entity.KnowledgeDocument;
 import ai.weixiu.entity.MaintenanceManual;
 import ai.weixiu.pojo.PageResult;
@@ -71,9 +72,10 @@ public class MaintenanceManualController {
         return Result.success(maintenanceManualService.getManualDetailById(manual.getId()));
     }
 
+    @RequireAdmin
     @DeleteMapping("/{id}")
     @Operation(summary = "根据 ID 删除维修手册")
-    /** 删除指定手册及其私有桶文档。 */
+    /** 删除指定手册及其私有桶文档。仅管理员可操作。 */
     public Result deleteById(@PathVariable Long id) {
         maintenanceManualService.deleteById(id);
         return Result.success();
@@ -138,13 +140,6 @@ public class MaintenanceManualController {
     }
 
     // ===== 文档版本管理 =====
-
-    @PostMapping("/{id}/upload-version")
-    @Operation(summary = "上传新版本文档")
-    public Result<KnowledgeDocument> uploadVersion(@PathVariable Long id,
-                                                   @RequestParam("file") MultipartFile file) {
-        return Result.success(knowledgeDocumentService.uploadNewVersion(id, file));
-    }
 
     @GetMapping("/{id}/versions")
     @Operation(summary = "查询手册的所有版本")
