@@ -4,6 +4,8 @@ import ai.weixiu.config.RabbitMQConfig;
 import ai.weixiu.entity.*;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.TaskStateException;
+import ai.weixiu.mapper.KnowledgeDocumentMapper;
+import ai.weixiu.mapper.ManualDeviceMapper;
 import ai.weixiu.mapper.MaintenanceTaskMapper;
 import ai.weixiu.mapper.ProcedureStepMapper;
 import ai.weixiu.mapper.StandardProcedureMapper;
@@ -16,8 +18,10 @@ import ai.weixiu.pojo.vo.MaintenanceTaskVO;
 import ai.weixiu.pojo.vo.TaskStepRecordVO;
 import ai.weixiu.service.MaintenanceTaskService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.toolkit.Db;
+import org.springframework.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -43,6 +47,8 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     private final ProcedureStepMapper procedureStepMapper;
     private final RabbitTemplate rabbitTemplate;
     private final Neo4jClient neo4jClient;
+    private final ManualDeviceMapper manualDeviceMapper;
+    private final KnowledgeDocumentMapper knowledgeDocumentMapper;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -379,6 +385,9 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
         log.info("[任务] 步骤生成成功 taskId={} 步骤数={}", taskId, steps.size());
+
+        // 自动沉淀手册-设备关联：从步骤来源中提取 documentId → 反查 manual_id → 写入 manual_device
+        autoLinkManualDevice(task, steps);
     }
 
     @Override
@@ -681,6 +690,99 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
                 .bind(fromId).to("fromId")
                 .bind(toId).to("toId")
                 .run();
+    }
+
+    // ==================== 手册-设备关联自动沉淀 ====================
+
+    /**
+     * 从 AI 生成的步骤来源中提取手册引用，自动建立手册-设备关联。
+     *
+     * <p>链路：steps[].sources[type=manual].documentId
+     *    → knowledge_document.manual_id
+     *    → INSERT IGNORE manual_device(manual_id, device_id)</p>
+     *
+     * <p>仅在任务有 deviceId 时才执行。重复关联自动忽略（联合唯一键）。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private void autoLinkManualDevice(MaintenanceTask task, List<TaskStepRecordVO> steps) {
+        String deviceId = task.getDeviceId();
+        String deviceName = task.getDeviceName();
+        if (!StringUtils.hasText(deviceId)) {
+            return;
+        }
+
+        // 1. 从所有步骤的 sources 中提取 type=manual 的 documentId
+        Set<String> documentIds = new HashSet<>();
+        for (TaskStepRecordVO step : steps) {
+            Object sourcesObj = step.getSources();
+            if (!(sourcesObj instanceof List)) {
+                continue;
+            }
+            List<?> sourcesList = (List<?>) sourcesObj;
+            for (Object item : sourcesList) {
+                if (!(item instanceof Map)) {
+                    continue;
+                }
+                Map<String, Object> source = (Map<String, Object>) item;
+                if ("manual".equals(source.get("type")) && source.get("documentId") != null) {
+                    String docId = source.get("documentId").toString();
+                    if (StringUtils.hasText(docId)) {
+                        documentIds.add(docId);
+                    }
+                }
+            }
+        }
+
+        if (documentIds.isEmpty()) {
+            log.debug("[任务] 步骤中无手册来源，跳过关联沉淀 taskId={}", task.getId());
+            return;
+        }
+
+        // 2. 反查 knowledge_document → 拿到 manual_id
+        List<KnowledgeDocument> docs = knowledgeDocumentMapper.selectList(
+                Wrappers.<KnowledgeDocument>lambdaQuery()
+                        .in(KnowledgeDocument::getDocumentId, documentIds)
+                        .select(KnowledgeDocument::getManualId));
+
+        Set<Long> manualIds = docs.stream()
+                .map(KnowledgeDocument::getManualId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        if (manualIds.isEmpty()) {
+            log.debug("[任务] documentId 无法反查到 manual_id，跳过 taskId={}", task.getId());
+            return;
+        }
+
+        // 3. 查已有关联，避免重复插入
+        List<ManualDevice> existing = manualDeviceMapper.selectList(
+                Wrappers.<ManualDevice>lambdaQuery()
+                        .in(ManualDevice::getManualId, manualIds)
+                        .eq(ManualDevice::getDeviceId, deviceId));
+        Set<Long> existingManualIds = existing.stream()
+                .map(ManualDevice::getManualId)
+                .collect(Collectors.toSet());
+
+        // 4. 插入新关联
+        int inserted = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (Long manualId : manualIds) {
+            if (existingManualIds.contains(manualId)) {
+                continue;
+            }
+            ManualDevice md = new ManualDevice();
+            md.setManualId(manualId);
+            md.setDeviceId(deviceId);
+            md.setDeviceName(deviceName);
+            md.setCreatedAt(now);
+            manualDeviceMapper.insert(md);
+            inserted++;
+        }
+
+        if (inserted > 0) {
+            log.info("[任务] 自动沉淀手册-设备关联: taskId={}, deviceId={}, 新增关联数={}",
+                    task.getId(), deviceId, inserted);
+        }
     }
 
     // ==================== 私有方法 ====================

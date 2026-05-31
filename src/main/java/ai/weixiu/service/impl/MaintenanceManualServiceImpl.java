@@ -1,6 +1,5 @@
 package ai.weixiu.service.impl;
 
-import ai.weixiu.entity.Device;
 import ai.weixiu.entity.KnowledgeDocument;
 import ai.weixiu.entity.MaintenanceManual;
 import ai.weixiu.entity.ManualDevice;
@@ -14,7 +13,6 @@ import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.MaintenanceManualDTO;
 import ai.weixiu.pojo.query.MaintenanceManualQuery;
 import ai.weixiu.pojo.vo.MaintenanceManualVO;
-import ai.weixiu.service.DeviceService;
 import ai.weixiu.service.KnowledgeDocumentService;
 import ai.weixiu.service.MaintenanceManualService;
 import ai.weixiu.service.MioIOUpLoadService;
@@ -30,7 +28,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -56,7 +53,6 @@ public class MaintenanceManualServiceImpl
     private final KnowledgeDocumentService knowledgeDocumentService;
     private final KnowledgeImportProducer knowledgeImportProducer;
     private final ManualDeviceMapper manualDeviceMapper;
-    private final DeviceService deviceService;
 
     @Override
     @Transactional
@@ -72,10 +68,7 @@ public class MaintenanceManualServiceImpl
         manual.setUpdatedAt(now);
         save(manual);
 
-        // 2. 保存手册-设备关联
-        saveDeviceAssociations(manual.getId(), maintenanceManualDTO.getDeviceIds());
-
-        // 3. 上传第一版文档（文件信息将在 onParseSuccess 回调中统一回写到 manual）
+        // 2. 上传第一版文档（文件信息将在 onParseSuccess 回调中统一回写到 manual）
         knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
 
         log.info("新增手册成功: {}, 已发起 v1 解析", manual.getId());
@@ -159,14 +152,6 @@ public class MaintenanceManualServiceImpl
 
         manual.setUpdatedAt(LocalDateTime.now());
         updateById(manual);
-
-        // 更新设备关联（前端传了 deviceIds 才更新，null 表示不修改）
-        if (maintenanceManualDTO.getDeviceIds() != null) {
-            // 先删旧关联再插新关联
-            manualDeviceMapper.delete(new LambdaQueryWrapper<ManualDevice>()
-                    .eq(ManualDevice::getManualId, manual.getId()));
-            saveDeviceAssociations(manual.getId(), maintenanceManualDTO.getDeviceIds());
-        }
 
         // 有新文件时上传新版本
         if (file != null && !file.isEmpty()) {
@@ -267,30 +252,4 @@ public class MaintenanceManualServiceImpl
         return new PageResult<>(result.getRecords(), result.getTotal(), pageNum, pageSize);
     }
 
-    // ===== 设备关联 =====
-
-    /**
-     * 保存手册-设备关联。
-     * 查询 Neo4j 获取设备名称冗余存储，避免推荐时频繁查图谱。
-     */
-    private void saveDeviceAssociations(Long manualId, List<String> deviceIds) {
-        if (CollectionUtils.isEmpty(deviceIds)) {
-            return;
-        }
-        LocalDateTime now = LocalDateTime.now();
-        for (String deviceId : deviceIds) {
-            // 查设备名称
-            String deviceName = deviceService.findById(deviceId)
-                    .map(Device::getName)
-                    .orElse(null);
-
-            ManualDevice md = new ManualDevice();
-            md.setManualId(manualId);
-            md.setDeviceId(deviceId);
-            md.setDeviceName(deviceName);
-            md.setCreatedAt(now);
-            manualDeviceMapper.insert(md);
-        }
-        log.info("手册设备关联保存完成: manualId={}, 设备数={}", manualId, deviceIds.size());
-    }
 }
