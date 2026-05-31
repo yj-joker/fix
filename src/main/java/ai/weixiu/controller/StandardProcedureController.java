@@ -9,6 +9,7 @@ import ai.weixiu.pojo.vo.ProcedureStepVO;
 import ai.weixiu.pojo.vo.StandardProcedureVO;
 import ai.weixiu.service.StandardProcedureService;
 import ai.weixiu.utils.BaseContext;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,6 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/weixiu/procedure")
 @RequiredArgsConstructor
+@Tag(name = "标准规程管理")
 public class StandardProcedureController {
 
     private final StandardProcedureService procedureService;

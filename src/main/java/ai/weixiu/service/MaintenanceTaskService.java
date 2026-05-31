@@ -30,11 +30,14 @@ public interface MaintenanceTaskService {
     /** 查询任务详情（含步骤列表） */
     MaintenanceTaskVO getTaskDetail(Long taskId);
 
-    /** 分页查询任务列表 */
-    PageResult<MaintenanceTaskVO> listTasks(MaintenanceTaskQuery query);
+    /** 分页查询任务列表（按角色自动过滤：员工只看自己的，管理员看全部） */
+    PageResult<MaintenanceTaskVO> listTasks(MaintenanceTaskQuery query, Long currentUserId, Integer userType);
 
     /** 查询任务的步骤列表 */
     List<TaskStepRecordVO> listSteps(Long taskId);
+
+    /** 管理员跳过沉淀（标记为无沉淀价值） */
+    void skipPromotion(Long taskId, String type);
 
     /** MQ回调：步骤AI验证结果（由StepVerifyResultListener调用） */
     void onStepVerifyResult(Long stepId, Boolean aiPass, Double confidence, String reason);

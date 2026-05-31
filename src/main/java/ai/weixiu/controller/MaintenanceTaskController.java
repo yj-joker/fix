@@ -8,8 +8,11 @@ import ai.weixiu.pojo.dto.StepExecuteDTO;
 import ai.weixiu.pojo.query.MaintenanceTaskQuery;
 import ai.weixiu.pojo.vo.MaintenanceTaskVO;
 import ai.weixiu.pojo.vo.TaskStepRecordVO;
+import ai.weixiu.entity.User;
+import ai.weixiu.mapper.UserMapper;
 import ai.weixiu.service.MaintenanceTaskService;
 import ai.weixiu.utils.BaseContext;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -23,9 +26,11 @@ import java.util.Map;
 @RestController
 @RequestMapping("/weixiu/task")
 @RequiredArgsConstructor
+@Tag(name = "检修任务管理")
 public class MaintenanceTaskController {
 
     private final MaintenanceTaskService taskService;
+    private final UserMapper userMapper;
     private final WebClient webClient;
 
     /** 创建检修任务（自动触发LLM生成步骤） */
@@ -78,10 +83,13 @@ public class MaintenanceTaskController {
         return Result.success(vo);
     }
 
-    /** 分页查询任务列表 */
+    /** 分页查询任务列表（员工只看自己的，管理员看全部，支持沉淀状态筛选） */
     @GetMapping
     public Result<PageResult<MaintenanceTaskVO>> listTasks(MaintenanceTaskQuery query) {
-        PageResult<MaintenanceTaskVO> result = taskService.listTasks(query);
+        Long userId = BaseContext.getCurrentId();
+        User user = userMapper.selectById(userId);
+        Integer userType = (user != null) ? user.getType() : 0;
+        PageResult<MaintenanceTaskVO> result = taskService.listTasks(query, userId, userType);
         return Result.success(result);
     }
 
@@ -108,6 +116,17 @@ public class MaintenanceTaskController {
             @PathVariable Long taskId,
             @RequestBody Map<String, Object> graphData) {
         taskService.promoteToGraph(taskId, graphData);
+        return Result.success(null);
+    }
+
+    /** 管理员跳过沉淀（标记为无沉淀价值） */
+    @RequireAdmin
+    @PostMapping("/{taskId}/skip-promotion")
+    public Result<Void> skipPromotion(
+            @PathVariable Long taskId,
+            @RequestBody Map<String, Object> body) {
+        String type = (String) body.getOrDefault("type", "both");
+        taskService.skipPromotion(taskId, type);
         return Result.success(null);
     }
 

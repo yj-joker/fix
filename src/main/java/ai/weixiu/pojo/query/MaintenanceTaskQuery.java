@@ -10,4 +10,8 @@ public class MaintenanceTaskQuery extends PageQuery {
     private String status;
     /** 按设备名称模糊搜索 */
     private String deviceName;
+    /** 按规程沉淀状态过滤: PENDING / PROMOTED / SKIPPED */
+    private String promotedProcedure;
+    /** 按图谱沉淀状态过滤: PENDING / PROMOTED / SKIPPED */
+    private String promotedGraph;
 }

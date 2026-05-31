@@ -29,11 +29,11 @@ public class MaintenanceTaskVO {
     /** AI提取的图谱线索（沉淀时供管理员确认） */
     private Object graphExtraction;
 
-    /** 是否已沉淀为标准规程 */
-    private Boolean promotedProcedure;
+    /** 规程沉淀状态: PENDING / PROMOTED / SKIPPED */
+    private String promotedProcedure;
 
-    /** 是否已沉淀到知识图谱 */
-    private Boolean promotedGraph;
+    /** 图谱沉淀状态: PENDING / PROMOTED / SKIPPED */
+    private String promotedGraph;
 
     /** 步骤列表（详情接口返回） */
     private List<TaskStepRecordVO> steps;

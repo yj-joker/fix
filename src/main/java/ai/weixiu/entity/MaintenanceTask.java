@@ -62,11 +62,11 @@ public class MaintenanceTask implements Serializable {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Object graphExtraction;
 
-    /** 是否已沉淀为标准规程 */
-    private Boolean promotedProcedure;
+    /** 规程沉淀状态: PENDING / PROMOTED / SKIPPED */
+    private String promotedProcedure;
 
-    /** 是否已沉淀到知识图谱 */
-    private Boolean promotedGraph;
+    /** 图谱沉淀状态: PENDING / PROMOTED / SKIPPED */
+    private String promotedGraph;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

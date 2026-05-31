@@ -233,8 +233,8 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
 
         stepMapper.updateById(step);
 
-        // 自动通过时检查任务是否全部完成
-        if ("COMPLETED".equals(step.getStatus())) {
+        // COMPLETED 或 AI_PASSED 都视为该步骤已完成，检查任务是否可关闭
+        if ("COMPLETED".equals(step.getStatus()) || "AI_PASSED".equals(step.getStatus())) {
             MaintenanceTask task = taskMapper.selectById(step.getTaskId());
             if (task != null) {
                 checkAllStepsCompleted(task);
@@ -288,17 +288,28 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     }
 
     @Override
-    public PageResult<MaintenanceTaskVO> listTasks(MaintenanceTaskQuery query) {
+    public PageResult<MaintenanceTaskVO> listTasks(MaintenanceTaskQuery query, Long currentUserId, Integer userType) {
         int pageNum = query.getPage() != null ? query.getPage() : 1;
         int pageSize = query.getSize() != null ? query.getSize() : 10;
         Page<MaintenanceTask> page = new Page<>(pageNum, pageSize);
         LambdaQueryWrapper<MaintenanceTask> wrapper = new LambdaQueryWrapper<>();
+
+        // 员工只能看自己的任务，管理员看全部
+        if (userType == null || userType != 1) {
+            wrapper.eq(MaintenanceTask::getReporterId, currentUserId);
+        }
 
         if (query.getStatus() != null && !query.getStatus().isBlank()) {
             wrapper.eq(MaintenanceTask::getStatus, query.getStatus());
         }
         if (query.getDeviceName() != null && !query.getDeviceName().isBlank()) {
             wrapper.like(MaintenanceTask::getDeviceName, query.getDeviceName());
+        }
+        if (query.getPromotedProcedure() != null && !query.getPromotedProcedure().isBlank()) {
+            wrapper.eq(MaintenanceTask::getPromotedProcedure, query.getPromotedProcedure());
+        }
+        if (query.getPromotedGraph() != null && !query.getPromotedGraph().isBlank()) {
+            wrapper.eq(MaintenanceTask::getPromotedGraph, query.getPromotedGraph());
         }
         wrapper.orderByDesc(MaintenanceTask::getCreatedAt);
 
@@ -394,8 +405,11 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         }
 
         // 重复沉淀保护
-        if (Boolean.TRUE.equals(task.getPromotedProcedure())) {
+        if ("PROMOTED".equals(task.getPromotedProcedure())) {
             throw new TaskStateException("该任务已沉淀为标准规程，不可重复操作");
+        }
+        if ("SKIPPED".equals(task.getPromotedProcedure())) {
+            throw new TaskStateException("该任务的规程沉淀已被管理员跳过");
         }
 
         // 查任务步骤
@@ -453,7 +467,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         Db.saveBatch(procedureSteps);
 
         // 标记已沉淀
-        task.setPromotedProcedure(true);
+        task.setPromotedProcedure("PROMOTED");
         taskMapper.updateById(task);
 
         log.info("[知识沉淀] 任务沉淀为标准规程 taskId={} procedureId={} 步骤数={}",
@@ -471,8 +485,11 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         }
 
         // 重复沉淀保护
-        if (Boolean.TRUE.equals(task.getPromotedGraph())) {
+        if ("PROMOTED".equals(task.getPromotedGraph())) {
             throw new TaskStateException("该任务已沉淀到知识图谱，不可重复操作");
+        }
+        if ("SKIPPED".equals(task.getPromotedGraph())) {
+            throw new TaskStateException("该任务的图谱沉淀已被管理员跳过");
         }
 
         // 如果前端没传 graphData 内容，则用 AI 提取的 graphExtraction 作为默认数据
@@ -550,11 +567,52 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         }
 
         // 标记已沉淀
-        task.setPromotedGraph(true);
+        task.setPromotedGraph("PROMOTED");
         taskMapper.updateById(task);
 
         log.info("[知识沉淀] 任务沉淀到图谱完成 taskId={} 设备={} 部件数={} 故障数={} 方案数={}",
                 taskId, deviceName, components.size(), faults.size(), solutions.size());
+    }
+
+    // ==================== 管理员跳过沉淀 ====================
+
+    @Override
+    @Transactional
+    public void skipPromotion(Long taskId, String type) {
+        MaintenanceTask task = getTaskOrThrow(taskId);
+        if (!"CLOSED".equals(task.getStatus())) {
+            throw new TaskStateException("只有已关闭的任务才能操作沉淀状态，当前状态: " + task.getStatus());
+        }
+
+        switch (type) {
+            case "procedure" -> {
+                if ("PROMOTED".equals(task.getPromotedProcedure())) {
+                    throw new TaskStateException("该任务已沉淀为标准规程，无法跳过");
+                }
+                task.setPromotedProcedure("SKIPPED");
+            }
+            case "graph" -> {
+                if ("PROMOTED".equals(task.getPromotedGraph())) {
+                    throw new TaskStateException("该任务已沉淀到知识图谱，无法跳过");
+                }
+                task.setPromotedGraph("SKIPPED");
+            }
+            case "both" -> {
+                if ("PROMOTED".equals(task.getPromotedProcedure())) {
+                    throw new TaskStateException("该任务已沉淀为标准规程，无法跳过");
+                }
+                if ("PROMOTED".equals(task.getPromotedGraph())) {
+                    throw new TaskStateException("该任务已沉淀到知识图谱，无法跳过");
+                }
+                task.setPromotedProcedure("SKIPPED");
+                task.setPromotedGraph("SKIPPED");
+            }
+            default -> throw new IllegalArgumentException("type 必须为 procedure / graph / both");
+        }
+
+        task.setUpdatedAt(LocalDateTime.now());
+        taskMapper.updateById(task);
+        log.info("[知识沉淀] 管理员跳过沉淀 taskId={} type={}", taskId, type);
     }
 
     // ==================== 图谱操作私有方法 ====================
@@ -775,10 +833,11 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     }
 
     private void checkAllStepsCompleted(MaintenanceTask task) {
+        // COMPLETED 和 AI_PASSED 都视为已完成状态
         Long count = stepMapper.selectCount(
                 new LambdaQueryWrapper<TaskStepRecord>()
                         .eq(TaskStepRecord::getTaskId, task.getId())
-                        .ne(TaskStepRecord::getStatus, "COMPLETED")
+                        .notIn(TaskStepRecord::getStatus, "COMPLETED", "AI_PASSED", "SKIPPED")
         );
         if (count == 0) {
             task.setStatus("CLOSED");
