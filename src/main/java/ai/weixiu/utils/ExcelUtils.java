@@ -24,9 +24,24 @@ public class ExcelUtils<T> {
             log.info("文件为空");
             return false;
         }
+
+        String filename = file.getOriginalFilename();
         String contentType = file.getContentType();
-        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(contentType)
-            || "application/vnd.ms-excel".equals(contentType);
+        log.info("上传文件校验: filename={}, contentType={}", filename, contentType);
+
+        if (filename == null || filename.isBlank()) {
+            log.info("文件名为空");
+            return false;
+        }
+
+        String lowerName = filename.toLowerCase();
+        boolean validSuffix = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls");
+        if (!validSuffix) {
+            log.info("文件后缀不是Excel: {}", filename);
+            return false;
+        }
+
+        return true;
     }
 
     /*

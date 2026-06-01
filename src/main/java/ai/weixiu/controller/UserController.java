@@ -46,9 +46,9 @@ public class UserController {
     /*
      * 用户注册
      * */
-    @PostMapping("/register")
+    @PostMapping(value = "/register", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "用户注册")
-    public Result batchRegister(MultipartFile file) {
+    public Result batchRegister(@RequestParam("file") MultipartFile file) {
         userService.batchRegister(file);
         return Result.success();
     }
