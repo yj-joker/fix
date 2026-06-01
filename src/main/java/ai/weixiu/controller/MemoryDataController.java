@@ -1,6 +1,7 @@
 package ai.weixiu.controller;
 
 import ai.weixiu.entity.*;
+import ai.weixiu.mapper.MemoryRecallTraceMapper;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.vo.MemoryIntegrationParametersVO;
 import ai.weixiu.pojo.vo.MemoryPreferenceVO;
@@ -36,6 +37,25 @@ public class MemoryDataController {
     private final MemoryFactService memoryFactService;
     private final MemoryPreferenceService memoryPreferenceService;
     private final MemoryUnresolvedService memoryUnresolvedService;
+    private final MemoryRecallTraceMapper recallTraceMapper;
+
+    @GetMapping("/recall-trace")
+    @Operation(summary = "查询记忆召回trace（调试用）")
+    public Result<List<MemoryRecallTrace>> getRecallTrace(
+            @RequestParam Long sessionId,
+            @RequestParam(required = false) Integer roundNo,
+            @RequestParam(defaultValue = "20") Integer limit) {
+
+        LambdaQueryWrapper<MemoryRecallTrace> query = new LambdaQueryWrapper<>();
+        query.eq(MemoryRecallTrace::getSessionId, sessionId);
+        if (roundNo != null) {
+            query.eq(MemoryRecallTrace::getRoundNo, roundNo);
+        }
+        query.orderByDesc(MemoryRecallTrace::getRoundNo)
+                .last("LIMIT " + Math.min(limit, 100));
+
+        return Result.success(recallTraceMapper.selectList(query));
+    }
 
     @GetMapping("/consolidation-params")
     @Operation(summary = "获取记忆整合参数（供Python消费者拉取）")

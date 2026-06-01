@@ -1,10 +1,8 @@
 package ai.weixiu.service.impl;
 
-import ai.weixiu.common.RedisKey;
 import ai.weixiu.entity.AiChatRequest;
 import ai.weixiu.entity.AiMessage;
 import ai.weixiu.entity.AiSession;
-import ai.weixiu.entity.CachedPreferences;
 import ai.weixiu.entity.MemoryMessage;
 import ai.weixiu.entity.MemoryPreference;
 import ai.weixiu.entity.MemoryUnresolved;
@@ -12,13 +10,13 @@ import ai.weixiu.enumerate.MemoryStatusEnum;
 import ai.weixiu.enumerate.PreferenceCategoryEnum;
 import ai.weixiu.exceprion.AiMemoryException;
 import ai.weixiu.exceprion.FormatErrorException;
+import ai.weixiu.pojo.dto.RecallContext;
 import ai.weixiu.pojo.vo.MemoryPreferenceVO;
 import ai.weixiu.pojo.vo.MemoryUnresolvedVO;
 import ai.weixiu.service.AiMessageService;
 import ai.weixiu.service.AiService;
 import ai.weixiu.service.AiSessionService;
-import ai.weixiu.service.MemoryPreferenceService;
-import ai.weixiu.service.MemoryUnresolvedService;
+import ai.weixiu.service.MemoryRecallService;
 import ai.weixiu.mq.MemoryMessageProducer;
 import ai.weixiu.service.ManualRecommendService;
 import ai.weixiu.utils.BaseContext;
@@ -26,11 +24,9 @@ import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import ai.weixiu.utils.VoiceToTextUtils;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Service;
@@ -47,8 +43,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 @Service
 @AllArgsConstructor
@@ -59,13 +53,11 @@ public class AiServiceImpl implements AiService {
     private final WebClient webClient;
     private final MemoryMessageProducer memoryMessageProducer;
     private final ManualRecommendService manualRecommendService;
-    private final RedisTemplate<String, Object> redisTemplate;
-    private final MemoryPreferenceService memoryPreferenceService;
-    private final MemoryUnresolvedService memoryUnresolvedService;
+    private final MemoryRecallService memoryRecallService;
     private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Integer maxMemory = 4;
-    private final VoiceToTextUtils voiceToTextUtils ;
+    private final VoiceToTextUtils voiceToTextUtils;
 
 
     @Override
@@ -84,7 +76,8 @@ public class AiServiceImpl implements AiService {
             ifOldMemory(aiChatRequest, aiSession, now, userId, memoryMessages);
         }
         // 将历史信息、偏好和待办事项拼接并设置到aiChatRequest
-        List<String> recentFactContents = finalAiContext(aiChatRequest, aiSession.getId(), userId, memoryMessages);
+        List<String> recentFactContents = finalAiContext(aiChatRequest, aiSession.getId(), userId,
+                memoryMessages, aiSession.getRoundCount());
 
         // 图片URL转Base64（云端LLM无法访问localhost MinIO，需要转为内联base64）
         if (aiChatRequest.getImages() != null && !aiChatRequest.getImages().isEmpty()) {
@@ -181,50 +174,20 @@ public class AiServiceImpl implements AiService {
     /**
      * 组装最终发送给AI的完整上下文
      *
-     * 上下文包含6部分（按优先级排列）：
-     * 1. previousContext  - 上一轮整合的渐进式摘要（让AI知道"之前聊了什么"）
-     * 2. relevantFacts    - 从向量库检索的相关事实（让AI"记住"历史事实，防止幻觉）
-     * 3. userPreferences  - 用户级偏好（跨会话通用，如"回复用中文"）
-     * 4. sessionPreferences - 会话级偏好（仅本次会话，如"这次用表格展示"）
-     * 5. messages         - 当前滑动窗口内的原始对话消息
-     * 6. unresolvedItems  - 还没解决的待办事项
-     *
-     * 【为什么要检索事实？】
-     * 之前事实提取了但从不使用，等于白做。现在通过向量检索把相关事实注入上下文，
-     * AI回答时能看到之前的事实记录，大大减少幻觉（编造不存在的信息）。
+     * <p>通过 MemoryRecallService 统一召回 summary/facts/preferences/unresolved，
+     * 然后将召回结果转换为 VO 并注入到 aiChatRequest 的 context 中。</p>
      */
-    private List<String> finalAiContext(AiChatRequest aiChatRequest, Long sessionId, Long userId, List<MemoryMessage> memoryMessages) {
-        // ========== 保留原始用户消息（后续realtime更新需要用到） ==========
+    private List<String> finalAiContext(AiChatRequest aiChatRequest, Long sessionId, Long userId,
+                                        List<MemoryMessage> memoryMessages, Integer roundNo) {
         String originalUserMessage = aiChatRequest.getUserMessage();
 
-        // ========== 1. 获取上一轮的摘要（作为对话背景） ==========
-        AiSession currentSession = aiSessionService.getById(sessionId);
-        String previousSummary = (currentSession != null) ? currentSession.getSummary() : null;
+        // ========== 统一召回（含 trace 记录） ==========
+        RecallContext recallCtx = memoryRecallService.recall(sessionId, userId, originalUserMessage, roundNo);
 
-        // ========== 2/3/4. 三个独立查询并行执行（节省 ~100-150ms） ==========
-        // 事实检索（调用Python向量库，最慢 ~200ms）
-        CompletableFuture<List<JSONObject>> factsFuture =
-                CompletableFuture.supplyAsync(() -> searchRelevantFacts(originalUserMessage, userId));
-
-        // 偏好查询（Redis缓存或MySQL，~50ms）
-        CompletableFuture<List<MemoryPreference>> preferencesFuture =
-                CompletableFuture.supplyAsync(() -> loadPreferences(sessionId, userId));
-
-        // 待办查询（MySQL，~50ms）
-        CompletableFuture<List<MemoryUnresolved>> unresolvedFuture =
-                CompletableFuture.supplyAsync(() -> memoryUnresolvedService.getUnresolved(sessionId));
-
-        // 等待三个任务全部完成
-        CompletableFuture.allOf(factsFuture, preferencesFuture, unresolvedFuture).join();
-
-        List<JSONObject> relevantFacts = factsFuture.join();
-        List<MemoryPreference> allPreferences = preferencesFuture.join();
-        List<MemoryUnresolved> unresolved = unresolvedFuture.join();
-
-        // ========== 5. 转换为VO对象 ==========
+        // ========== 转换偏好为 VO ==========
         List<MemoryPreferenceVO> userPrefVOs = new ArrayList<>();
         List<MemoryPreferenceVO> sessionPrefVOs = new ArrayList<>();
-        for (MemoryPreference pref : allPreferences) {
+        for (MemoryPreference pref : recallCtx.getPreferences()) {
             MemoryPreferenceVO vo = new MemoryPreferenceVO();
             vo.setContent(pref.getContent());
             vo.setCategory(pref.getCategory());
@@ -238,7 +201,7 @@ public class AiServiceImpl implements AiService {
         }
 
         List<MemoryUnresolvedVO> unresolvedVOs = new ArrayList<>();
-        for (MemoryUnresolved item : unresolved) {
+        for (MemoryUnresolved item : recallCtx.getUnresolvedItems()) {
             MemoryUnresolvedVO vo = new MemoryUnresolvedVO();
             vo.setContent(item.getContent());
             vo.setType(item.getType());
@@ -246,13 +209,10 @@ public class AiServiceImpl implements AiService {
             unresolvedVOs.add(vo);
         }
 
-        // ========== 6. 构建多轮对话历史（OpenAI格式） ==========
-        // 注意：memoryMessages最后一条是刚保存的当前轮user消息，需要排除
-        // 因为当前轮消息会作为独立的message字段发送，避免重复
+        // ========== 构建多轮对话历史（OpenAI格式） ==========
         List<Map<String, String>> conversationHistory = new ArrayList<>();
         for (int i = 0; i < memoryMessages.size(); i++) {
             MemoryMessage msg = memoryMessages.get(i);
-            // 排除最后一条（当前轮user消息），它已经在message字段中
             if (i == memoryMessages.size() - 1 && "user".equals(msg.getRole())) {
                 break;
             }
@@ -263,13 +223,13 @@ public class AiServiceImpl implements AiService {
         }
         aiChatRequest.setConversationHistory(conversationHistory);
 
-        // ========== 7. 构建结构化上下文（注入system prompt） ==========
+        // ========== 构建结构化上下文（注入system prompt） ==========
         Map<String, Object> contextMap = new HashMap<>();
-        if (previousSummary != null && !previousSummary.isEmpty()) {
-            contextMap.put("previous_summary", previousSummary);
+        if (recallCtx.getPreviousSummary() != null && !recallCtx.getPreviousSummary().isEmpty()) {
+            contextMap.put("previous_summary", recallCtx.getPreviousSummary());
         }
-        if (!relevantFacts.isEmpty()) {
-            contextMap.put("relevant_facts", relevantFacts);
+        if (!recallCtx.getRelevantFacts().isEmpty()) {
+            contextMap.put("relevant_facts", recallCtx.getRelevantFacts());
         }
         if (!userPrefVOs.isEmpty()) {
             contextMap.put("user_preferences", userPrefVOs);
@@ -280,111 +240,12 @@ public class AiServiceImpl implements AiService {
         if (!unresolvedVOs.isEmpty()) {
             contextMap.put("unresolved_items", unresolvedVOs);
         }
-        // 传递userId供Python端工具（如recall_conversation_detail）使用
         contextMap.put("user_id", userId);
         aiChatRequest.setContext(contextMap);
 
-        // ========== 8. userMessage保持为当前用户的原始消息 ==========
-        // 不再覆盖为JSON大块，Python端能正确识别当前轮用户说了什么
         aiChatRequest.setUserMessage(originalUserMessage);
 
-        // 返回本轮召回的事实内容，供实时记忆更新MQ消息携带
-        return relevantFacts.stream()
-                .map(f -> f.getStr("content"))
-                .filter(c -> c != null && !c.isEmpty())
-                .toList();
-    }
-
-    /**
-     * 加载用户偏好（双级缓存：用户级 + 会话级分开缓存）
-     *
-     * 用户级偏好缓存不含 sessionId，任一会话触发变更时清除一个 key 即可
-     * 令所有会话失效，避免跨会话偏好陈旧。
-     */
-    @SuppressWarnings("unchecked")
-    private List<MemoryPreference> loadPreferences(Long sessionId, Long userId) {
-        String userCacheKey = RedisKey.PREFERENCE_CACHE_USER + userId;
-        String sessionCacheKey = RedisKey.PREFERENCE_CACHE_SESSION + userId + ":" + sessionId;
-
-        List<MemoryPreference> cachedUser = (List<MemoryPreference>) redisTemplate.opsForValue().get(userCacheKey);
-        List<MemoryPreference> cachedSession = (List<MemoryPreference>) redisTemplate.opsForValue().get(sessionCacheKey);
-
-        if (cachedUser != null && cachedSession != null) {
-            List<MemoryPreference> result = new ArrayList<>(cachedUser);
-            result.addAll(cachedSession);
-            return result;
-        }
-
-        // 缓存未命中，查数据库
-        List<MemoryPreference> allPreferences = memoryPreferenceService.getPreference(sessionId, userId);
-
-        List<MemoryPreference> userPrefs = new ArrayList<>();
-        List<MemoryPreference> sessionPrefs = new ArrayList<>();
-        for (MemoryPreference pref : allPreferences) {
-            if (pref.getPreferenceCategory() != null
-                    && pref.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
-                userPrefs.add(pref);
-            } else {
-                sessionPrefs.add(pref);
-            }
-        }
-
-        redisTemplate.opsForValue().set(userCacheKey, userPrefs, 5, TimeUnit.HOURS);
-        redisTemplate.opsForValue().set(sessionCacheKey, sessionPrefs, 5, TimeUnit.HOURS);
-
-        return allPreferences;
-    }
-
-    /**
-     * 调用Python端向量检索接口，查找与用户消息语义最相关的历史事实
-     *
-     * 【工作原理】
-     * 1. 把用户当前发送的消息作为查询文本发给Python端
-     * 2. Python端用text-embedding模型把查询文本转为向量
-     * 3. 在Redis向量库中做KNN近邻搜索，找到最相似的事实记录
-     * 4. 返回top 5条最相关的事实
-     *
-     * 这些事实会被注入到AI对话上下文中，让AI能"记住"之前提取的事实。
-     *
-     * @param userMessage 用户当前发送的消息
-     * @return 相关事实列表，每条包含 content/score/keywords 等字段
-     */
-    private List<JSONObject> searchRelevantFacts(String userMessage, Long userId) {
-        try {
-            // 查出当前用户的所有会话ID，用于过滤事实（防止检索到其他用户的事实）
-            LambdaQueryWrapper<AiSession> sessionQuery = new LambdaQueryWrapper<>();
-            sessionQuery.eq(AiSession::getUserId, userId).select(AiSession::getId);
-            List<String> userSessionIds = aiSessionService.list(sessionQuery)
-                    .stream().map(s -> s.getId().toString()).toList();
-
-            // 调用Python端的事实检索接口
-            String response = webClient.post()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/ai/memory/search_facts")
-                            .queryParam("query", userMessage)
-                            .queryParam("top_k", 5)
-                            .queryParam("session_ids", String.join(",", userSessionIds))
-                            .build())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            if (response != null) {
-                JSONObject result = JSONUtil.parseObj(response);
-                cn.hutool.json.JSONArray facts = result.getJSONArray("facts");
-                if (facts != null && !facts.isEmpty()) {
-                    List<JSONObject> factList = new ArrayList<>();
-                    for (int i = 0; i < facts.size(); i++) {
-                        factList.add(facts.getJSONObject(i));
-                    }
-                    log.info("向量检索到{}条相关事实", factList.size());
-                    return factList;
-                }
-            }
-        } catch (Exception e) {
-            // 事实检索失败不影响主流程，降级为没有事实记忆
-            log.warn("事实记忆向量检索失败，降级运行: {}", e.getMessage());
-        }
-        return new ArrayList<>();
+        return recallCtx.getRecentFactContents();
     }
 
     private @NonNull Flux<String> getStringFlux(AiChatRequest aiChatRequest, String uri) {
@@ -415,7 +276,6 @@ public class AiServiceImpl implements AiService {
     }
 
     private void saveAiReply(AiSession finalAiSession, Long userId, StringBuilder fullResponse) {
-        // 流结束后保存AI回复
         AiMessage assistantMessage = new AiMessage();
         assistantMessage.setAiSessionId(finalAiSession.getId());
         assistantMessage.setUserId(userId);
@@ -433,7 +293,6 @@ public class AiServiceImpl implements AiService {
         }
         aiSession.setUpdatedAt(now);
         aiSession.setRoundCount(aiSession.getRoundCount() + 1);
-        //保存本轮userMessage
         AiMessage userMessage = new AiMessage();
         userMessage.setAiSessionId(aiSession.getId());
         userMessage.setUserId(userId);
@@ -455,16 +314,14 @@ public class AiServiceImpl implements AiService {
     }
 
     private AiSession saveAiSession(AiChatRequest aiChatRequest, LocalDateTime now, Long userId) {
-        //保存会话
         AiSession aiSession;
         aiSession = new AiSession();
         aiSession.setId(Long.valueOf(aiChatRequest.getSessionId()));
 
         aiSession.setUserId(userId);
-        //取前10字作为标题
         String title = aiChatRequest.getUserMessage();
         if (title != null && title.length() > 10) {
-            title = title.substring(0, 10) + "...";  // 前10字 + "..."
+            title = title.substring(0, 10) + "...";
         } else if (title == null || title.isBlank()) {
             title = "新对话";
         }
@@ -474,7 +331,6 @@ public class AiServiceImpl implements AiService {
         aiSession.setUpdatedAt(now);
         aiSession.setCreatedAt(now);
         aiSessionService.save(aiSession);
-        //保存AiMessage
         AiMessage aiMessage = new AiMessage();
         aiMessage.setAiSessionId(aiSession.getId());
         aiMessage.setUserId(userId);

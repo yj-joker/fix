@@ -82,5 +82,32 @@ public class MemoryFact implements Serializable {
     @TableField("superseded_at")
     private LocalDateTime supersededAt;
 
+    /**
+     * 重要度 1-10。
+     * 1-3: 临时/低价值（调试状态、过渡表述）
+     * 4-6: 中等（一般技术细节）
+     * 7-9: 重要（设备型号、关键配置、确认结论）
+     * 10:  核心（安全规程相关、反复确认的关键事实）
+     */
+    @TableField("importance")
+    private Integer importance;
+
+    /**
+     * 置信度 0.00-1.00。
+     * 1.00: 用户明确陈述且无矛盾
+     * 0.80: 默认值，正常提取
+     * 0.50-0.70: 推断得出，需进一步确认
+     * < 0.50: 低置信，可能有误
+     */
+    @TableField("confidence")
+    private Double confidence;
+
+    /** 最后一次被向量检索命中并注入上下文的时间 */
+    @TableField("last_used_at")
+    private LocalDateTime lastUsedAt;
+
+    /** 被召回的总次数 */
+    @TableField("usage_count")
+    private Integer usageCount;
 
 }

@@ -125,6 +125,9 @@ public class MemoryResultListener {
                 memoryFact.setContent(correction.getStr("correct_content"));
                 memoryFact.setKeywords(correction.getStr("keywords"));
                 memoryFact.setStatus("active");
+                memoryFact.setImportance(7); // 纠正事实默认较高重要度
+                memoryFact.setConfidence(0.95); // 用户主动纠正，置信度高
+                memoryFact.setUsageCount(0);
 
                 // 合并 sourceSeqRange：旧事实的范围 + 当前纠正轮次
                 String oldRange = (oldSeqRanges != null && i < oldSeqRanges.size()) ? oldSeqRanges.getStr(i) : "";
@@ -222,6 +225,9 @@ public class MemoryResultListener {
                 memoryFact.setKeywords(fact.getStr("keywords"));
                 memoryFact.setSourceSeqRange(fact.getStr("sourceSeqRange"));
                 memoryFact.setStatus("active");
+                memoryFact.setImportance(fact.getInt("importance", 5));
+                memoryFact.setConfidence(fact.getDouble("confidence", 0.80));
+                memoryFact.setUsageCount(0);
                 facts.add(memoryFact);
             }
             memoryFactService.saveBatch(facts);
