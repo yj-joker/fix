@@ -84,7 +84,7 @@ public class AiServiceImpl implements AiService {
             ifOldMemory(aiChatRequest, aiSession, now, userId, memoryMessages);
         }
         // 将历史信息、偏好和待办事项拼接并设置到aiChatRequest
-        finalAiContext(aiChatRequest, aiSession.getId(), userId, memoryMessages);
+        List<String> recentFactContents = finalAiContext(aiChatRequest, aiSession.getId(), userId, memoryMessages);
 
         // 图片URL转Base64（云端LLM无法访问localhost MinIO，需要转为内联base64）
         if (aiChatRequest.getImages() != null && !aiChatRequest.getImages().isEmpty()) {
@@ -108,7 +108,8 @@ public class AiServiceImpl implements AiService {
                             userId,
                             aiChatRequest.getUserMessage(),
                             fullResponse.toString(),
-                            finalAiSession.getRoundCount()
+                            finalAiSession.getRoundCount(),
+                            recentFactContents
                     );
 
                     // ===== 定时整合：每maxMemory轮发MQ消息 =====
@@ -192,7 +193,7 @@ public class AiServiceImpl implements AiService {
      * 之前事实提取了但从不使用，等于白做。现在通过向量检索把相关事实注入上下文，
      * AI回答时能看到之前的事实记录，大大减少幻觉（编造不存在的信息）。
      */
-    private void finalAiContext(AiChatRequest aiChatRequest, Long sessionId, Long userId, List<MemoryMessage> memoryMessages) {
+    private List<String> finalAiContext(AiChatRequest aiChatRequest, Long sessionId, Long userId, List<MemoryMessage> memoryMessages) {
         // ========== 保留原始用户消息（后续realtime更新需要用到） ==========
         String originalUserMessage = aiChatRequest.getUserMessage();
 
@@ -286,41 +287,51 @@ public class AiServiceImpl implements AiService {
         // ========== 8. userMessage保持为当前用户的原始消息 ==========
         // 不再覆盖为JSON大块，Python端能正确识别当前轮用户说了什么
         aiChatRequest.setUserMessage(originalUserMessage);
+
+        // 返回本轮召回的事实内容，供实时记忆更新MQ消息携带
+        return relevantFacts.stream()
+                .map(f -> f.getStr("content"))
+                .filter(c -> c != null && !c.isEmpty())
+                .toList();
     }
 
     /**
-     * 加载用户偏好（优先Redis缓存，未命中则查MySQL并回写缓存）
+     * 加载用户偏好（双级缓存：用户级 + 会话级分开缓存）
+     *
+     * 用户级偏好缓存不含 sessionId，任一会话触发变更时清除一个 key 即可
+     * 令所有会话失效，避免跨会话偏好陈旧。
      */
+    @SuppressWarnings("unchecked")
     private List<MemoryPreference> loadPreferences(Long sessionId, Long userId) {
-        String cacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
-        CachedPreferences cached = (CachedPreferences) redisTemplate.opsForValue().get(cacheKey);
+        String userCacheKey = RedisKey.PREFERENCE_CACHE_USER + userId;
+        String sessionCacheKey = RedisKey.PREFERENCE_CACHE_SESSION + userId + ":" + sessionId;
 
-        if (cached != null) {
-            List<MemoryPreference> result = new ArrayList<>();
-            if (cached.getUserPreferences() != null) {
-                result.addAll(cached.getUserPreferences());
-            }
-            if (cached.getSessionPreferences() != null) {
-                result.addAll(cached.getSessionPreferences());
-            }
+        List<MemoryPreference> cachedUser = (List<MemoryPreference>) redisTemplate.opsForValue().get(userCacheKey);
+        List<MemoryPreference> cachedSession = (List<MemoryPreference>) redisTemplate.opsForValue().get(sessionCacheKey);
+
+        if (cachedUser != null && cachedSession != null) {
+            List<MemoryPreference> result = new ArrayList<>(cachedUser);
+            result.addAll(cachedSession);
             return result;
         }
 
+        // 缓存未命中，查数据库
         List<MemoryPreference> allPreferences = memoryPreferenceService.getPreference(sessionId, userId);
-        if (!allPreferences.isEmpty()) {
-            List<MemoryPreference> userPrefs = new ArrayList<>();
-            List<MemoryPreference> sessionPrefs = new ArrayList<>();
-            for (MemoryPreference pref : allPreferences) {
-                if (pref.getPreferenceCategory() != null
-                        && pref.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
-                    userPrefs.add(pref);
-                } else {
-                    sessionPrefs.add(pref);
-                }
+
+        List<MemoryPreference> userPrefs = new ArrayList<>();
+        List<MemoryPreference> sessionPrefs = new ArrayList<>();
+        for (MemoryPreference pref : allPreferences) {
+            if (pref.getPreferenceCategory() != null
+                    && pref.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
+                userPrefs.add(pref);
+            } else {
+                sessionPrefs.add(pref);
             }
-            CachedPreferences toCache = new CachedPreferences(userPrefs, sessionPrefs);
-            redisTemplate.opsForValue().set(cacheKey, toCache, 5, TimeUnit.HOURS);
         }
+
+        redisTemplate.opsForValue().set(userCacheKey, userPrefs, 5, TimeUnit.HOURS);
+        redisTemplate.opsForValue().set(sessionCacheKey, sessionPrefs, 5, TimeUnit.HOURS);
+
         return allPreferences;
     }
 

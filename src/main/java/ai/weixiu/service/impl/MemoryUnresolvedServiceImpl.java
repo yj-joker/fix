@@ -22,7 +22,8 @@ public class MemoryUnresolvedServiceImpl extends ServiceImpl<MemoryUnresolvedMap
     @Override
     public List<MemoryUnresolved> getUnresolved(Long sessionId) {
         LambdaQueryWrapper<MemoryUnresolved> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(MemoryUnresolved::getSessionId, sessionId);
+        wrapper.eq(MemoryUnresolved::getSessionId, sessionId)
+                .eq(MemoryUnresolved::getStatus, "active");
         return this.list(wrapper);
     }
 }

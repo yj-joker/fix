@@ -113,8 +113,8 @@ public class MaintenanceManualController {
 
     @PostMapping("/list")
     @Operation(summary = "分页查询维修手册")
-    /** 按分页和筛选条件查询手册列表。 */
-    public Result<PageResult<MaintenanceManual>> list(@RequestBody MaintenanceManualQuery query) {
+    /** 按分页和筛选条件查询手册列表，每个手册条目包含临时 MinIO 预签名下载地址。 */
+    public Result<PageResult<MaintenanceManualVO>> list(@RequestBody MaintenanceManualQuery query) {
         return Result.success(maintenanceManualService.getManualList(query));
     }
 

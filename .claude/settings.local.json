@@ -15,7 +15,9 @@
       "Bash(mvn compile *)",
       "Bash(powershell *)",
       "Bash(Get-ChildItem -Path \"D:\\\\javaWeb\\\\daima\\\\weixiu\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"D:\\\\javaWeb\\\\daima\\\\weixiu\" -Recurse -Include \"*.sql\")",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

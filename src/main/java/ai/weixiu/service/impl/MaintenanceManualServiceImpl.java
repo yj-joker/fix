@@ -37,6 +37,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 @AllArgsConstructor
@@ -247,7 +248,7 @@ public class MaintenanceManualServiceImpl
     }
 
     @Override
-    public PageResult<MaintenanceManual> getManualList(MaintenanceManualQuery query) {
+    public PageResult<MaintenanceManualVO> getManualList(MaintenanceManualQuery query) {
         Integer pageNum = query.getPage() == null ? 1 : query.getPage();
         Integer pageSize = query.getSize() == null ? 10 : query.getSize();
         Page<MaintenanceManual> page = new Page<>(pageNum, pageSize);
@@ -256,7 +257,21 @@ public class MaintenanceManualServiceImpl
                 .eq(query.getStatus() != null, MaintenanceManual::getStatus, query.getStatus())
                 .orderBy(true, !Objects.equals(query.getIsAsc(), 1), MaintenanceManual::getCreatedAt);
         Page<MaintenanceManual> result = page(page, wrapper);
-        return new PageResult<>(result.getRecords(), result.getTotal(), pageNum, pageSize);
+
+        List<MaintenanceManualVO> voList = result.getRecords().stream().map(manual -> {
+            MaintenanceManualVO vo = new MaintenanceManualVO();
+            BeanUtils.copyProperties(manual, vo);
+            if (StringUtils.hasText(manual.getMinioObjectName())) {
+                vo.setFileUrl(mioIOUpLoadService.getPresignedUrl(
+                        manual.getMinioObjectName(),
+                        BucketEnum.PRIVATE,
+                        PRIVATE_FILE_URL_EXPIRY_MINUTES
+                ));
+            }
+            return vo;
+        }).collect(Collectors.toList());
+
+        return new PageResult<>(voList, result.getTotal(), pageNum, pageSize);
     }
 
 }

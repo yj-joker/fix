@@ -20,9 +20,12 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
+import org.springframework.web.reactive.function.client.WebClient;
+
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,6 +43,7 @@ public class MemoryResultListener {
     private final AiMessageService aiMessageService;
     private final ManualRecommendService manualRecommendService;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final WebClient webClient;
 
     @RabbitListener(queues = RabbitMQConfig.RESULT_QUEUE)
     public void onMemoryResult(Map<String, Object> msg, Channel channel, @Header(AmqpHeaders.DELIVERY_TAG) long tag) throws IOException {
@@ -183,8 +187,10 @@ public class MemoryResultListener {
                 }
             }
             if (cacheInvalidated) {
-                String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
-                redisTemplate.delete(prefCacheKey);
+                // 清除用户级偏好缓存（所有会话共享）
+                redisTemplate.delete(RedisKey.PREFERENCE_CACHE_USER + userId);
+                // 清除当前会话级偏好缓存
+                redisTemplate.delete(RedisKey.PREFERENCE_CACHE_SESSION + userId + ":" + sessionId);
                 // 偏好变更后清除个性化推荐缓存，下次访问时重新计算
                 if (userId != null) {
                     manualRecommendService.invalidateCache(userId);
@@ -235,6 +241,21 @@ public class MemoryResultListener {
                     .set(MemoryFact::getSupersededAt, LocalDateTime.now());
             memoryFactService.update(factWrapper);
             log.info("[MQ结果] 更新已替代事实, 数量:{}", supersededFactIds.size());
+
+            // 同步通知 Python 删除 Redis 向量库中的旧事实
+            try {
+                Map<String, Object> deleteRequest = new HashMap<>();
+                deleteRequest.put("fact_ids", supersededFactIds);
+                webClient.post()
+                        .uri("/ai/memory/delete_facts")
+                        .bodyValue(deleteRequest)
+                        .retrieve()
+                        .bodyToMono(String.class)
+                        .block();
+                log.info("[MQ结果] 已通知Python删除旧事实向量, 数量:{}", supersededFactIds.size());
+            } catch (Exception e) {
+                log.warn("[MQ结果] 通知Python删除旧事实向量失败（不影响主流程）: {}", e.getMessage());
+            }
         }
 
         // 3. 保存updatedPreferences
@@ -285,8 +306,10 @@ public class MemoryResultListener {
             if (!preferences.isEmpty()) {
                 memoryPreferenceService.saveBatch(preferences);
             }
-            String prefCacheKey = RedisKey.PREFERENCE_CACHE + userId + ":" + sessionId;
-            redisTemplate.delete(prefCacheKey);
+            // 清除用户级偏好缓存（所有会话共享）
+            redisTemplate.delete(RedisKey.PREFERENCE_CACHE_USER + userId);
+            // 清除当前会话级偏好缓存
+            redisTemplate.delete(RedisKey.PREFERENCE_CACHE_SESSION + userId + ":" + sessionId);
             // 整合产生偏好变更后清除个性化推荐缓存
             if (userId != null) {
                 manualRecommendService.invalidateCache(userId);

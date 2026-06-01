@@ -25,6 +25,6 @@ public interface MaintenanceManualService extends IService<MaintenanceManual> {
     /** 查询详情页数据：基础信息 + 当前可用版本文件 URL + 版本状态。 */
     MaintenanceManualVO getManualDetailById(Long id);
 
-    /** 分页查询手册列表。 */
-    PageResult<MaintenanceManual> getManualList(MaintenanceManualQuery query);
+    /** 分页查询手册列表，每个条目包含临时 MinIO 预签名下载地址。 */
+    PageResult<MaintenanceManualVO> getManualList(MaintenanceManualQuery query);
 }

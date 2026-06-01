@@ -3,7 +3,12 @@ package ai.weixiu.common;
 public class RedisKey {
         public static final String USER_SESSION_ID="User:SessionId:";
         public static final String USER_EMAIL_CODE="User:Email:Code:";
+        @Deprecated
         public static final String PREFERENCE_CACHE = "Memory:Preference:";
+        /** 用户级偏好缓存（不含sessionId，变更时一次清除） */
+        public static final String PREFERENCE_CACHE_USER = "Memory:Preference:User:";
+        /** 会话级偏好缓存（含sessionId，仅当前会话有效） */
+        public static final String PREFERENCE_CACHE_SESSION = "Memory:Preference:Session:";
         public static final String CONSOLIDATION_LOCK = "Memory:Consolidation:Lock:";
 
         /**
