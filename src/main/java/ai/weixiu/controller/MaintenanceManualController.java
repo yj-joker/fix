@@ -8,6 +8,9 @@ import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.MaintenanceManualDTO;
 import ai.weixiu.pojo.dto.MaintenanceManualReadHeartbeatDTO;
 import ai.weixiu.pojo.dto.MaintenanceManualReadStartDTO;
+import ai.weixiu.pojo.dto.ManualSearchDTO;
+import ai.weixiu.pojo.vo.ManualSearchResponseVO;
+import jakarta.validation.Valid;
 import ai.weixiu.pojo.query.MaintenanceManualQuery;
 import ai.weixiu.pojo.vo.ManualReadHistoryVO;
 import ai.weixiu.pojo.vo.ManualRecommendVO;
@@ -18,6 +21,7 @@ import ai.weixiu.pojo.vo.MaintenanceManualVO;
 import ai.weixiu.enumerate.MaintenanceManualRankType;
 import ai.weixiu.service.KnowledgeDocumentService;
 import ai.weixiu.service.ManualRecommendService;
+import ai.weixiu.service.ManualSearchService;
 import ai.weixiu.service.MaintenanceManualService;
 import ai.weixiu.service.MaintenanceManualRankService;
 import ai.weixiu.service.MaintenanceManualReadService;
@@ -56,11 +60,15 @@ public class MaintenanceManualController {
     /** 个性化推荐服务。 */
     private final ManualRecommendService manualRecommendService;
 
+    /** 章节级搜索服务。 */
+    private final ManualSearchService manualSearchService;
+
     /** 文档版本管理服务。 */
     private final KnowledgeDocumentService knowledgeDocumentService;
 
     @PostMapping("/save")
     @Operation(summary = "新增维修手册")
+    @RequireAdmin
     /**
      * 新增维修手册。
      *
@@ -149,7 +157,16 @@ public class MaintenanceManualController {
         return Result.success(maintenanceManualRankService.getRankList(MaintenanceManualRankType.parse(type), limit));
     }
 
-    // ===== 文档版本管理 =====
+    // ===== 章节级搜索 =====
+
+    @PostMapping("/search")
+    @Operation(summary = "章节级智能搜索")
+    /** 根据关键词从向量库检索最相关的文本块/图片/表格，返回章节归属和页码定位。 */
+    public Result<ManualSearchResponseVO> search(@RequestBody @Valid ManualSearchDTO dto) {
+        return Result.success(manualSearchService.search(dto));
+    }
+
+    // ===== 文档版���管理 =====
 
     @GetMapping("/{id}/versions")
     @Operation(summary = "查询手册的所有版本")

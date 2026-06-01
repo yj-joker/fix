@@ -1,7 +1,10 @@
 package ai.weixiu.service;
 
 import ai.weixiu.entity.Solution;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.SolutionDTO;
+import ai.weixiu.pojo.query.SolutionQuery;
+import ai.weixiu.pojo.vo.SolutionVO;
 
 import java.util.List;
 import java.util.Optional;
@@ -32,5 +35,10 @@ public interface SolutionService {
      * 更新解决方案信息
      */
     Solution update(SolutionDTO solutionDTO);
+
+    /**
+     * 分页查询解决方案列表
+     */
+    PageResult<SolutionVO> getList(SolutionQuery query);
 
 }

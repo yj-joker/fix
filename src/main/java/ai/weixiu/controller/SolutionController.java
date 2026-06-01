@@ -1,8 +1,11 @@
 package ai.weixiu.controller;
 
 import ai.weixiu.entity.Solution;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.SolutionDTO;
+import ai.weixiu.pojo.query.SolutionQuery;
+import ai.weixiu.pojo.vo.SolutionVO;
 import ai.weixiu.service.SolutionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -40,5 +43,11 @@ public class SolutionController {
     @Operation(summary = "更新解决方案信息")
     public Result<Solution> update(@RequestBody SolutionDTO solutionDTO) {
         return Result.success(solutionService.update(solutionDTO));
+    }
+
+    @PostMapping("/list")
+    @Operation(summary = "分页查询解决方案列表")
+    public Result<PageResult<SolutionVO>> list(@RequestBody SolutionQuery query) {
+        return Result.success(solutionService.getList(query));
     }
 }

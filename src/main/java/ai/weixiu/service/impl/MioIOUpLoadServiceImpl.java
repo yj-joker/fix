@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -182,17 +184,24 @@ public class MioIOUpLoadServiceImpl implements MioIOUpLoadService {
         return getPresignedUrl(objectName, bucket.getName(), expiry);
     }
 
-    /** 调用 MinIO 客户端生成 GET 预签名地址。 */
+    /** 调用 MinIO 客户端生成 GET 预签名地址。PDF 文件强制浏览器内联预览而非下载。 */
     private String getPresignedUrl(String objectName,String bucketName,int expiry) {
         try {
-            return minioClient.getPresignedObjectUrl(
-                    GetPresignedObjectUrlArgs.builder()
-                            .method(Method.GET)
-                            .bucket(bucketName)
-                            .object(objectName)
-                            .expiry(expiry, TimeUnit.MINUTES)
-                            .build()
-            );
+            GetPresignedObjectUrlArgs.Builder builder = GetPresignedObjectUrlArgs.builder()
+                    .method(Method.GET)
+                    .bucket(bucketName)
+                    .object(objectName)
+                    .expiry(expiry, TimeUnit.MINUTES);
+
+            // PDF 文件：覆盖响应头，让浏览器内联显示而非下载，#page=N 锚点才能生效
+            if (objectName.toLowerCase().endsWith(".pdf")) {
+                Map<String, String> queryParams = new HashMap<>();
+                queryParams.put("response-content-type", "application/pdf");
+                queryParams.put("response-content-disposition", "inline");
+                builder.extraQueryParams(queryParams);
+            }
+
+            return minioClient.getPresignedObjectUrl(builder.build());
         } catch (Exception e) {
             log.error("获取预签名 URL 失败: {}", e.getMessage());
             throw new RuntimeException("获取预签名 URL 失败", e);

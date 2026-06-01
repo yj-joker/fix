@@ -2,7 +2,10 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.entity.Solution;
 import ai.weixiu.exceprion.NotFoundException;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.SolutionDTO;
+import ai.weixiu.pojo.query.SolutionQuery;
+import ai.weixiu.pojo.vo.SolutionVO;
 import ai.weixiu.repository.SolutionRepository;
 import ai.weixiu.service.SolutionService;
 import ai.weixiu.utils.BuildStringUtils;
@@ -66,6 +69,33 @@ public class SolutionServiceImpl implements SolutionService {
             multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, solution.getImageUrls())
         );
         return solutionRepository.save(solution);
+    }
+
+    @Override
+    public PageResult<SolutionVO> getList(SolutionQuery query) {
+        int pageNum = query.getPage() == null ? 0 : query.getPage();
+        int pageSize = query.getSize() == null ? 10 : query.getSize();
+        int skip = pageNum * pageSize;
+
+        List<SolutionVO> records = solutionRepository.findSolutionPage(
+                query.getTitle(),
+                query.getDifficulty(),
+                query.getVerified(),
+                skip,
+                pageSize
+        );
+        Long total = solutionRepository.countSolutionPage(
+                query.getTitle(),
+                query.getDifficulty(),
+                query.getVerified()
+        );
+
+        PageResult<SolutionVO> result = new PageResult<>();
+        result.setRecords(records);
+        result.setTotal(total);
+        result.setPage(pageNum);
+        result.setSize(pageSize);
+        return result;
     }
 
     protected Solution toEntity(SolutionDTO solutionDTO) {
