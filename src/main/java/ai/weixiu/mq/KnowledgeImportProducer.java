@@ -38,7 +38,7 @@ public class KnowledgeImportProducer {
     public void sendImportTask(String documentId, String fileUrl, String fileType,
                                String category, Long userId,
                                String documentVersion, String deviceType,
-                               String manualType, String oldDocumentId) {
+                               String manualType, String oldDocumentId, Long manualId) {
         Map<String, Object> message = new HashMap<>();
         message.put("action", "import");
         message.put("taskId", documentId);
@@ -47,6 +47,7 @@ public class KnowledgeImportProducer {
         message.put("category", category);
         message.put("userId", userId);
         message.put("documentId", documentId);
+        message.put("manualId", manualId);
         message.put("documentVersion", documentVersion);
         message.put("deviceType", deviceType);
         message.put("manualType", manualType);

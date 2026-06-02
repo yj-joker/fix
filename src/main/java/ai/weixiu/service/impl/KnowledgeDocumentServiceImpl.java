@@ -154,7 +154,8 @@ public class KnowledgeDocumentServiceImpl
                         "v" + newVersion,
                         null,
                         null,
-                        null
+                        null,
+                        manualId
                 );
             }
         });
