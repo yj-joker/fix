@@ -240,6 +240,9 @@ public class AiServiceImpl implements AiService {
         if (!unresolvedVOs.isEmpty()) {
             contextMap.put("unresolved_items", unresolvedVOs);
         }
+        if (recallCtx.getUserProfile() != null && !recallCtx.getUserProfile().isEmpty()) {
+            contextMap.put("user_profile", recallCtx.getUserProfile());
+        }
         contextMap.put("user_id", userId);
         aiChatRequest.setContext(contextMap);
 

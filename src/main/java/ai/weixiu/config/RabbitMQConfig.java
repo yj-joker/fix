@@ -39,6 +39,12 @@ public class RabbitMQConfig {
     public static final String TASK_STEP_VERIFY_RESULT_QUEUE = "task.step.verify.result.queue";
     public static final String TASK_STEP_VERIFY_RESULT_KEY = "task.step.verify.result";
 
+    // ===== 记忆反思队列 =====
+    public static final String REFLECTION_QUEUE = "memory.reflection.queue";
+    public static final String REFLECTION_KEY = "memory.reflection";
+    public static final String REFLECTION_RESULT_QUEUE = "memory.reflection.result.queue";
+    public static final String REFLECTION_RESULT_KEY = "memory.reflection.result";
+
     public static final String REALTIME_KEY = "memory.realtime";
     public static final String CONSOLIDATE_KEY = "memory.consolidate";
     public static final String RESULT_KEY = "memory.result";
@@ -107,6 +113,31 @@ public class RabbitMQConfig {
     @Bean
     public Binding resultBinding() {
         return BindingBuilder.bind(resultQueue()).to(memoryExchange()).with(RESULT_KEY);
+    }
+
+    // ===== Reflection Queue (TTL 10min) =====
+
+    @Bean
+    public Queue reflectionQueue() {
+        return QueueBuilder.durable(REFLECTION_QUEUE)
+                .withArgument("x-message-ttl", 600_000)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .build();
+    }
+
+    @Bean
+    public Binding reflectionBinding() {
+        return BindingBuilder.bind(reflectionQueue()).to(memoryExchange()).with(REFLECTION_KEY);
+    }
+
+    @Bean
+    public Queue reflectionResultQueue() {
+        return QueueBuilder.durable(REFLECTION_RESULT_QUEUE).build();
+    }
+
+    @Bean
+    public Binding reflectionResultBinding() {
+        return BindingBuilder.bind(reflectionResultQueue()).to(memoryExchange()).with(REFLECTION_RESULT_KEY);
     }
 
     // ===== Knowledge Import Exchange & Queues =====

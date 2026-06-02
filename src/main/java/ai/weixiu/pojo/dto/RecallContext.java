@@ -6,6 +6,7 @@ import cn.hutool.json.JSONObject;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 记忆召回上下文 — MemoryRecallService 的统一返回值。
@@ -28,6 +29,9 @@ public class RecallContext {
 
     /** 未解决的待办事项 */
     private List<MemoryUnresolved> unresolvedItems;
+
+    /** 用户画像（反思 Agent 生成的高层归纳） */
+    private List<Map<String, String>> userProfile;
 
     // ===== 派生数据（供 MQ 传递） =====
 

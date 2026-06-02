@@ -23,7 +23,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/weixiu/memory")
@@ -55,6 +57,27 @@ public class MemoryDataController {
                 .last("LIMIT " + Math.min(limit, 100));
 
         return Result.success(recallTraceMapper.selectList(query));
+    }
+
+    @GetMapping("/user-facts")
+    @Operation(summary = "获取用户全部active事实（供Python反思Agent拉取）")
+    public Result<List<Map<String, Object>>> getUserFacts(@RequestParam Long userId) {
+        LambdaQueryWrapper<MemoryFact> query = new LambdaQueryWrapper<>();
+        query.eq(MemoryFact::getUserId, userId)
+             .eq(MemoryFact::getStatus, "active")
+             .orderByDesc(MemoryFact::getCreatedAt);
+        List<MemoryFact> facts = memoryFactService.list(query);
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (MemoryFact f : facts) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("content", f.getContent());
+            item.put("keywords", f.getKeywords());
+            item.put("device_type", f.getDeviceType());
+            item.put("importance", f.getImportance());
+            result.add(item);
+        }
+        return Result.success(result);
     }
 
     @GetMapping("/consolidation-params")

@@ -4,6 +4,7 @@ import ai.weixiu.common.RedisKey;
 import ai.weixiu.config.RabbitMQConfig;
 import ai.weixiu.entity.*;
 import ai.weixiu.enumerate.PreferenceCategoryEnum;
+import ai.weixiu.entity.MemoryReflection;
 import ai.weixiu.service.*;
 import ai.weixiu.service.ManualRecommendService;
 import cn.hutool.json.JSONArray;
@@ -39,6 +40,7 @@ public class MemoryResultListener {
     private final MemoryFactService memoryFactService;
     private final MemoryPreferenceService memoryPreferenceService;
     private final MemoryUnresolvedService memoryUnresolvedService;
+    private final MemoryReflectionService memoryReflectionService;
     private final AiSessionService aiSessionService;
     private final AiMessageService aiMessageService;
     private final ManualRecommendService manualRecommendService;
@@ -74,6 +76,8 @@ public class MemoryResultListener {
                 processRealtimeResult(data, sessionId, userId, currentRound);
             } else if ("consolidation".equals(type)) {
                 processConsolidationResult(data, sessionId, userId);
+            } else if ("reflection".equals(type)) {
+                processReflectionResult(data, userId);
             } else {
                 log.warn("[MQ结果] 未知type: {}", type);
             }
@@ -394,6 +398,56 @@ public class MemoryResultListener {
         }
 
         log.info("[MQ结果] 记忆整合完成, 会话ID:{}", sessionId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void processReflectionResult(Map<String, Object> data, Long userId) {
+        List<Map<String, Object>> reflections = (List<Map<String, Object>>) data.get("reflections");
+        Number factCountNum = (Number) data.get("factCount");
+        int factCount = factCountNum != null ? factCountNum.intValue() : 0;
+
+        if (reflections == null || reflections.isEmpty()) {
+            log.info("[MQ结果] 反思结果为空, userId:{}", userId);
+            return;
+        }
+
+        for (Map<String, Object> r : reflections) {
+            String type = (String) r.get("type");
+            String content = (String) r.get("content");
+            Number confidenceNum = (Number) r.get("confidence");
+            double confidence = confidenceNum != null ? confidenceNum.doubleValue() : 0.70;
+
+            // Upsert: 同 userId + type 的旧记录标记为 archived
+            LambdaUpdateWrapper<MemoryReflection> archiveWrapper = new LambdaUpdateWrapper<>();
+            archiveWrapper.eq(MemoryReflection::getUserId, userId)
+                    .eq(MemoryReflection::getReflectionType, type)
+                    .eq(MemoryReflection::getStatus, "active")
+                    .set(MemoryReflection::getStatus, "archived");
+            memoryReflectionService.update(archiveWrapper);
+
+            // 查旧版本号
+            LambdaQueryWrapper<MemoryReflection> versionQuery = new LambdaQueryWrapper<>();
+            versionQuery.eq(MemoryReflection::getUserId, userId)
+                    .eq(MemoryReflection::getReflectionType, type)
+                    .orderByDesc(MemoryReflection::getVersion)
+                    .last("LIMIT 1");
+            MemoryReflection lastVersion = memoryReflectionService.getOne(versionQuery);
+            int newVersion = (lastVersion != null && lastVersion.getVersion() != null)
+                    ? lastVersion.getVersion() + 1 : 1;
+
+            // 保存新画像
+            MemoryReflection reflection = new MemoryReflection();
+            reflection.setUserId(userId);
+            reflection.setReflectionType(type);
+            reflection.setContent(content);
+            reflection.setEvidenceFactCount(factCount);
+            reflection.setConfidence(confidence);
+            reflection.setVersion(newVersion);
+            reflection.setStatus("active");
+            memoryReflectionService.save(reflection);
+        }
+
+        log.info("[MQ结果] 用户画像反思保存完成, userId:{}, 维度数:{}", userId, reflections.size());
     }
 
     private int getNextConsolidationSeq(String sessionId) {

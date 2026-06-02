@@ -41,6 +41,21 @@ public class MemoryMessageProducer {
         }
     }
 
+    public void sendReflection(Long userId, int factCount) {
+        Map<String, Object> msg = new HashMap<>();
+        msg.put("messageId", UUID.randomUUID().toString());
+        msg.put("userId", userId);
+        msg.put("factCount", factCount);
+        msg.put("createdAt", LocalDateTime.now().toString());
+
+        try {
+            rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.REFLECTION_KEY, msg);
+            log.info("[MQ] 发送反思消息, userId:{}, factCount:{}", userId, factCount);
+        } catch (Exception e) {
+            log.error("[MQ] 发送反思消息失败, userId:{}, 错误:{}", userId, e.getMessage());
+        }
+    }
+
     public void sendConsolidate(Long sessionId, Long userId, Integer roundCount, Integer maxMemory) {
         Map<String, Object> msg = new HashMap<>();
         msg.put("messageId", UUID.randomUUID().toString());

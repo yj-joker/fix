@@ -5,6 +5,7 @@ import ai.weixiu.entity.AiSession;
 import ai.weixiu.entity.MemoryFact;
 import ai.weixiu.entity.MemoryPreference;
 import ai.weixiu.entity.MemoryRecallTrace;
+import ai.weixiu.entity.MemoryReflection;
 import ai.weixiu.entity.MemoryUnresolved;
 import ai.weixiu.enumerate.PreferenceCategoryEnum;
 import ai.weixiu.mapper.MemoryRecallTraceMapper;
@@ -13,6 +14,7 @@ import ai.weixiu.service.AiSessionService;
 import ai.weixiu.service.MemoryFactService;
 import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MemoryRecallService;
+import ai.weixiu.service.MemoryReflectionService;
 import ai.weixiu.service.MemoryUnresolvedService;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
@@ -26,7 +28,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -44,6 +48,7 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
     private final AiSessionService aiSessionService;
     private final MemoryFactService memoryFactService;
     private final MemoryPreferenceService memoryPreferenceService;
+    private final MemoryReflectionService memoryReflectionService;
     private final MemoryUnresolvedService memoryUnresolvedService;
     private final WebClient webClient;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -72,7 +77,10 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
         CompletableFuture<List<MemoryUnresolved>> unresolvedFuture =
                 CompletableFuture.supplyAsync(() -> memoryUnresolvedService.getUnresolved(sessionId));
 
-        CompletableFuture.allOf(factsFuture, preferencesFuture, unresolvedFuture).join();
+        CompletableFuture<List<MemoryReflection>> reflectionsFuture =
+                CompletableFuture.supplyAsync(() -> memoryReflectionService.getActiveReflections(userId));
+
+        CompletableFuture.allOf(factsFuture, preferencesFuture, unresolvedFuture, reflectionsFuture).join();
 
         List<JSONObject> relevantFacts = factsFuture.join();
         long factEnd = System.currentTimeMillis();
@@ -82,10 +90,22 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
 
         List<MemoryUnresolved> unresolved = unresolvedFuture.join();
 
+        List<MemoryReflection> reflections = reflectionsFuture.join();
+
         // ========== 3. 填充 RecallContext ==========
         ctx.setRelevantFacts(relevantFacts);
         ctx.setPreferences(preferences);
         ctx.setUnresolvedItems(unresolved);
+
+        // 填充用户画像
+        List<Map<String, String>> profileItems = new ArrayList<>();
+        for (MemoryReflection r : reflections) {
+            Map<String, String> item = new HashMap<>();
+            item.put("type", r.getReflectionType());
+            item.put("content", r.getContent());
+            profileItems.add(item);
+        }
+        ctx.setUserProfile(profileItems);
 
         // 提取事实内容（供 MQ recentFacts）
         List<String> factContents = new ArrayList<>();
