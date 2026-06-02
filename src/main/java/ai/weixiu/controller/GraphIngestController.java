@@ -8,6 +8,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * 手册图谱入库接口。内部接口，鉴权由 SessionInterceptor 基于 X-Internal-Token 统一处理。
  */
@@ -24,5 +27,22 @@ public class GraphIngestController {
             @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         int n = graphIngestService.ingestFromManual(dto);
         return Result.success(n);
+    }
+
+    @GetMapping("/unverified")
+    public Result<List<Map<String, Object>>> unverified(@RequestParam(defaultValue = "50") int limit) {
+        return Result.success(graphIngestService.listUnverified(limit));
+    }
+
+    @PostMapping("/approve/{solutionId}")
+    public Result<Void> approve(@PathVariable String solutionId) {
+        graphIngestService.approveSolution(solutionId);
+        return Result.success(null);
+    }
+
+    @DeleteMapping("/reject")
+    public Result<Void> reject(@RequestParam String label, @RequestParam String nodeId) {
+        graphIngestService.rejectNode(label, nodeId);
+        return Result.success(null);
     }
 }

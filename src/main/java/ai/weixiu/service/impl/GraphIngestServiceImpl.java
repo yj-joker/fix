@@ -159,5 +159,32 @@ public class GraphIngestServiceImpl implements GraphIngestService {
                 .fetchAs(Long.class).one().orElse(0L).intValue();
     }
 
+    @Override
+    public List<Map<String, Object>> listUnverified(int limit) {
+        return new ArrayList<>(neo4jClient.query("""
+                MATCH (s:Solution) WHERE s.verified = false AND s.source = 'manual_auto'
+                OPTIONAL MATCH (f:Fault)-[:HAS_SOLUTION]->(s)
+                RETURN s.id AS id, s.title AS title, s.description AS description,
+                       f.name AS faultName, s.source_manual_ids AS sourceManualIds
+                LIMIT $limit
+                """).bind(limit).to("limit").fetch().all());
+    }
+
+    @Override
+    @Transactional
+    public void approveSolution(String solutionId) {
+        neo4jClient.query("MATCH (s:Solution {id:$id}) SET s.verified = true")
+                .bind(solutionId).to("id").run();
+    }
+
+    @Override
+    @Transactional
+    public void rejectNode(String label, String nodeId) {
+        if (!List.of("Component", "Fault", "Solution").contains(label))
+            throw new IllegalArgumentException("不支持的label: " + label);
+        neo4jClient.query("MATCH (n:" + label + " {id:$id}) WHERE n.source = 'manual_auto' DETACH DELETE n")
+                .bind(nodeId).to("id").run();
+    }
+
     private <T> List<T> safe(List<T> l) { return l == null ? List.of() : l; }
 }

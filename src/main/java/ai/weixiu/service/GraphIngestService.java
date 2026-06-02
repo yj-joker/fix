@@ -8,4 +8,10 @@ public interface GraphIngestService {
 
     /** 某手册关联某设备时，把该手册抽取的所有 Component 补 OWNS 边到该设备。返回补边的 Component 数。 */
     int linkManualComponentsToDevice(Long manualId, String deviceId);
+
+    java.util.List<java.util.Map<String,Object>> listUnverified(int limit);
+
+    void approveSolution(String solutionId);
+
+    void rejectNode(String label, String nodeId);
 }
