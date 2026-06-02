@@ -144,5 +144,20 @@ public class GraphIngestServiceImpl implements GraphIngestService {
         return touched;
     }
 
+    @Override
+    @Transactional
+    public int linkManualComponentsToDevice(Long manualId, String deviceId) {
+        if (manualId == null || deviceId == null) return 0;
+        return neo4jClient.query("""
+                MATCH (c:Component) WHERE $manualId IN coalesce(c.source_manual_ids, [])
+                MATCH (d:Device {id: $deviceId})
+                MERGE (d)-[:OWNS]->(c)
+                RETURN count(c) AS n
+                """)
+                .bind(manualId).to("manualId")
+                .bind(deviceId).to("deviceId")
+                .fetchAs(Long.class).one().orElse(0L).intValue();
+    }
+
     private <T> List<T> safe(List<T> l) { return l == null ? List.of() : l; }
 }

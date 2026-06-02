@@ -16,6 +16,7 @@ import ai.weixiu.pojo.dto.StepExecuteDTO;
 import ai.weixiu.pojo.query.MaintenanceTaskQuery;
 import ai.weixiu.pojo.vo.MaintenanceTaskVO;
 import ai.weixiu.pojo.vo.TaskStepRecordVO;
+import ai.weixiu.service.GraphIngestService;
 import ai.weixiu.service.MaintenanceTaskService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -49,6 +50,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     private final Neo4jClient neo4jClient;
     private final ManualDeviceMapper manualDeviceMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+    private final GraphIngestService graphIngestService;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -776,6 +778,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             md.setDeviceName(deviceName);
             md.setCreatedAt(now);
             manualDeviceMapper.insert(md);
+            graphIngestService.linkManualComponentsToDevice(md.getManualId(), deviceId);
             inserted++;
         }
 
