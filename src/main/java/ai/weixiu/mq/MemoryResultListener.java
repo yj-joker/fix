@@ -228,6 +228,23 @@ public class MemoryResultListener {
                 memoryFact.setImportance(fact.getInt("importance", 5));
                 memoryFact.setConfidence(fact.getDouble("confidence", 0.80));
                 memoryFact.setUsageCount(0);
+                // 业务维度（Phase 4）
+                String deviceType = fact.getStr("deviceType", "");
+                if (!deviceType.isEmpty()) {
+                    memoryFact.setDeviceType(deviceType);
+                }
+                String equipmentIdStr = fact.getStr("equipmentId", "");
+                if (!equipmentIdStr.isEmpty()) {
+                    try { memoryFact.setEquipmentId(Long.valueOf(equipmentIdStr)); } catch (NumberFormatException ignored) {}
+                }
+                String siteIdStr = fact.getStr("siteId", "");
+                if (!siteIdStr.isEmpty()) {
+                    try { memoryFact.setSiteId(Long.valueOf(siteIdStr)); } catch (NumberFormatException ignored) {}
+                }
+                String taskIdStr = fact.getStr("taskId", "");
+                if (!taskIdStr.isEmpty()) {
+                    try { memoryFact.setTaskId(Long.valueOf(taskIdStr)); } catch (NumberFormatException ignored) {}
+                }
                 facts.add(memoryFact);
             }
             memoryFactService.saveBatch(facts);

@@ -50,7 +50,8 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
     private final MemoryRecallTraceMapper recallTraceMapper;
 
     @Override
-    public RecallContext recall(Long sessionId, Long userId, String userMessage, Integer roundNo) {
+    public RecallContext recall(Long sessionId, Long userId, String userMessage, Integer roundNo,
+                                String deviceType, String equipmentId, String siteId, String taskId) {
         long totalStart = System.currentTimeMillis();
         RecallContext ctx = new RecallContext();
 
@@ -61,7 +62,8 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
         // ========== 2. 三个独立查询并行执行 ==========
         long factStart = System.currentTimeMillis();
         CompletableFuture<List<JSONObject>> factsFuture =
-                CompletableFuture.supplyAsync(() -> searchRelevantFacts(userMessage, userId));
+                CompletableFuture.supplyAsync(() -> searchRelevantFacts(
+                        userMessage, userId, deviceType, equipmentId, siteId, taskId));
 
         long prefStart = System.currentTimeMillis();
         CompletableFuture<List<MemoryPreference>> preferencesFuture =
@@ -121,8 +123,12 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
 
     /**
      * 调用 Python 向量检索接口，查找与用户消息最相关的历史事实。
+     * 支持传递业务上下文参数（deviceType/equipmentId/siteId/taskId），
+     * 让 FactReranker 的 business_match 因子优先返回与当前业务相关的记忆。
      */
-    private List<JSONObject> searchRelevantFacts(String userMessage, Long userId) {
+    private List<JSONObject> searchRelevantFacts(String userMessage, Long userId,
+                                                  String deviceType, String equipmentId,
+                                                  String siteId, String taskId) {
         try {
             LambdaQueryWrapper<AiSession> sessionQuery = new LambdaQueryWrapper<>();
             sessionQuery.eq(AiSession::getUserId, userId).select(AiSession::getId);
@@ -130,12 +136,25 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
                     .stream().map(s -> s.getId().toString()).toList();
 
             String response = webClient.post()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/ai/memory/search_facts")
-                            .queryParam("query", userMessage)
-                            .queryParam("top_k", 5)
-                            .queryParam("session_ids", String.join(",", userSessionIds))
-                            .build())
+                    .uri(uriBuilder -> {
+                        uriBuilder.path("/ai/memory/search_facts")
+                                .queryParam("query", userMessage)
+                                .queryParam("top_k", 5)
+                                .queryParam("session_ids", String.join(",", userSessionIds));
+                        if (deviceType != null && !deviceType.isEmpty()) {
+                            uriBuilder.queryParam("device_type", deviceType);
+                        }
+                        if (equipmentId != null && !equipmentId.isEmpty()) {
+                            uriBuilder.queryParam("equipment_id", equipmentId);
+                        }
+                        if (siteId != null && !siteId.isEmpty()) {
+                            uriBuilder.queryParam("site_id", siteId);
+                        }
+                        if (taskId != null && !taskId.isEmpty()) {
+                            uriBuilder.queryParam("task_id", taskId);
+                        }
+                        return uriBuilder.build();
+                    })
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();

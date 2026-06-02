@@ -110,4 +110,20 @@ public class MemoryFact implements Serializable {
     @TableField("usage_count")
     private Integer usageCount;
 
+    /** 场地ID — 事实关联的场地（可选） */
+    @TableField("site_id")
+    private Long siteId;
+
+    /** 设备ID — 事实关联的设备（可选） */
+    @TableField("equipment_id")
+    private Long equipmentId;
+
+    /** 设备类型 — 如"液压泵"、"电动机"（可选） */
+    @TableField("device_type")
+    private String deviceType;
+
+    /** 检修任务ID — 事实关联的检修任务（可选） */
+    @TableField("task_id")
+    private Long taskId;
+
 }
