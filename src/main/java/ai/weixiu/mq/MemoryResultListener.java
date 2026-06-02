@@ -4,7 +4,9 @@ import ai.weixiu.common.RedisKey;
 import ai.weixiu.config.RabbitMQConfig;
 import ai.weixiu.entity.*;
 import ai.weixiu.enumerate.PreferenceCategoryEnum;
+import ai.weixiu.entity.MemoryIdempotent;
 import ai.weixiu.entity.MemoryReflection;
+import ai.weixiu.mapper.MemoryIdempotentMapper;
 import ai.weixiu.service.*;
 import ai.weixiu.service.ManualRecommendService;
 import cn.hutool.json.JSONArray;
@@ -46,6 +48,7 @@ public class MemoryResultListener {
     private final ManualRecommendService manualRecommendService;
     private final RedisTemplate<String, Object> redisTemplate;
     private final WebClient webClient;
+    private final MemoryIdempotentMapper idempotentMapper;
 
     @RabbitListener(queues = RabbitMQConfig.RESULT_QUEUE)
     public void onMemoryResult(Map<String, Object> msg, Channel channel, @Header(AmqpHeaders.DELIVERY_TAG) long tag) throws IOException {
@@ -55,6 +58,13 @@ public class MemoryResultListener {
             String sessionId = String.valueOf(msg.get("sessionId"));
             Number userIdNum = (Number) msg.get("userId");
             Long userId = userIdNum != null ? userIdNum.longValue() : null;
+
+            // 幂等检查
+            String messageId = (String) msg.get("messageId");
+            if (isDuplicate(messageId, type)) {
+                channel.basicAck(tag, false);
+                return;
+            }
 
             if (!success) {
                 log.warn("[MQ结果] 任务失败, type={}, sessionId={}, error={}", type, sessionId, msg.get("error"));
@@ -469,6 +479,35 @@ public class MemoryResultListener {
             maxSeq = Math.max(maxSeq, lastUnresolved.getConsolidationSeq());
         }
         return maxSeq + 1;
+    }
+
+    /**
+     * 幂等检查：如果消息已处理过则返回 true（跳过），否则插入记录返回 false（继续处理）。
+     */
+    private boolean isDuplicate(String messageId, String messageType) {
+        if (messageId == null || messageId.isEmpty()) {
+            return false;
+        }
+        try {
+            MemoryIdempotent existing = idempotentMapper.selectById(messageId);
+            if (existing != null) {
+                log.warn("[幂等] 消息已处理过, messageId:{}, type:{}", messageId, messageType);
+                return true;
+            }
+            MemoryIdempotent record = new MemoryIdempotent();
+            record.setMessageId(messageId);
+            record.setMessageType(messageType);
+            record.setStatus("processed");
+            idempotentMapper.insert(record);
+            return false;
+        } catch (Exception e) {
+            if (e.getMessage() != null && e.getMessage().contains("Duplicate")) {
+                log.warn("[幂等] 并发重复消息, messageId:{}", messageId);
+                return true;
+            }
+            log.warn("[幂等] 检查失败（放行处理）: {}", e.getMessage());
+            return false;
+        }
     }
 
     /**

@@ -18,6 +18,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -291,5 +292,39 @@ public class MemoryDataController {
             log.warn("[细节召回] sourceSeqRange 格式异常: {}", seqRange);
         }
         return segments;
+    }
+
+    @GetMapping("/conflicts")
+    @Operation(summary = "查询待确认的事实冲突")
+    public Result<List<MemoryFact>> getConflicts(@RequestParam Long userId) {
+        LambdaQueryWrapper<MemoryFact> query = new LambdaQueryWrapper<>();
+        query.eq(MemoryFact::getUserId, userId)
+             .eq(MemoryFact::getStatus, "conflict_pending")
+             .orderByDesc(MemoryFact::getCreatedAt);
+        return Result.success(memoryFactService.list(query));
+    }
+
+    @PostMapping("/conflicts/resolve")
+    @Operation(summary = "确认或拒绝事实冲突")
+    public Result<String> resolveConflict(
+            @RequestParam Long factId,
+            @RequestParam String action) {
+
+        MemoryFact fact = memoryFactService.getById(factId);
+        if (fact == null || !"conflict_pending".equals(fact.getStatus())) {
+            return Result.success("事实不存在或不是冲突状态");
+        }
+
+        if ("accept".equals(action)) {
+            fact.setStatus("active");
+            memoryFactService.updateById(fact);
+            return Result.success("已接受新事实");
+        } else if ("reject".equals(action)) {
+            fact.setStatus("deleted");
+            memoryFactService.updateById(fact);
+            return Result.success("已拒绝新事实");
+        } else {
+            return Result.success("未知操作，支持 accept/reject");
+        }
     }
 }
