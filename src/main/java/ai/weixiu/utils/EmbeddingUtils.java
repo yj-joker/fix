@@ -33,7 +33,9 @@ public class EmbeddingUtils {
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(objectMapper.writeValueAsString(Map.of(
                             "model", "text-embedding-v4",
-                            "input", text
+                            "input", text,
+                            "dimensions", 1024,
+                            "encoding_format", "float"
                     )))
                     .retrieve()
                     .bodyToMono(String.class)
@@ -59,6 +61,9 @@ public class EmbeddingUtils {
         List<Double> embedding = new ArrayList<>();
         for (JsonNode node : embeddingArray) {
             embedding.add(node.asDouble());
+        }
+        if (embedding.size() != 1024) {
+            throw new EmbeddingException("文本向量维度异常，期望1024实际" + embedding.size());
         }
         return embedding;
     }
