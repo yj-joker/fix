@@ -185,13 +185,14 @@ public class GraphQueryServiceImpl implements GraphQueryService {
 
         // 单次查询：先聚合全量路径得到 total，再切片当前页，最后只对当前页展开 Solution
         String cypher = """
-                MATCH (d:Device)-[:OWNS]->(c:Component)-[:CAUSES]->(f:Fault)
+                MATCH (c:Component)-[:CAUSES]->(f:Fault)
                 WHERE %s
+                OPTIONAL MATCH (d:Device)-[:OWNS]->(c)
                 OPTIONAL MATCH (d)-[hf:HAS_FAULT]->(f)
-                WITH DISTINCT d, c, f, hf IS NOT NULL AS hasHistory,
+                WITH DISTINCT c, f, d, hf IS NOT NULL AS hasHistory,
                      CASE WHEN f.id IN $faultIds THEN 1 ELSE 0 END +
                      CASE WHEN c.id IN $componentIds THEN 1 ELSE 0 END +
-                     CASE WHEN d.id IN $deviceIds THEN 1 ELSE 0 END +
+                     CASE WHEN d IS NOT NULL AND d.id IN $deviceIds THEN 1 ELSE 0 END +
                      CASE WHEN hf IS NOT NULL THEN 1 ELSE 0 END AS matchScore
                 ORDER BY matchScore DESC, hasHistory DESC
                 WITH collect({d: d, c: c, f: f, hasHistory: hasHistory, matchScore: matchScore}) AS allPaths
