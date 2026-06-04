@@ -47,7 +47,7 @@ public class ComponentController {
     public Result<Component> update(@RequestBody ComponentDTO componentDTO) {
         return Result.success(componentService.update(componentDTO));
     }
-    @GetMapping("/faults")
+    @PostMapping("/faults")
     @Operation(summary = "查询部件的故障")
     public Result<PageResult<FaultVO>> getComponentFaults(@RequestBody ComponentQuery componentQuery) {
         return Result.success(componentService.getComponentFaults(componentQuery));
