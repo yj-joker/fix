@@ -8,10 +8,13 @@ import ai.weixiu.pojo.dto.StepExecuteDTO;
 import ai.weixiu.pojo.query.MaintenanceTaskQuery;
 import ai.weixiu.pojo.vo.MaintenanceTaskVO;
 import ai.weixiu.pojo.vo.TaskStepRecordVO;
+import ai.weixiu.entity.TaskChatMessage;
 import ai.weixiu.entity.User;
 import ai.weixiu.mapper.UserMapper;
 import ai.weixiu.service.MaintenanceTaskService;
 import ai.weixiu.utils.BaseContext;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -22,6 +25,7 @@ import reactor.core.publisher.Flux;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 @RequestMapping("/weixiu/task")
@@ -32,6 +36,7 @@ public class MaintenanceTaskController {
     private final MaintenanceTaskService taskService;
     private final UserMapper userMapper;
     private final WebClient webClient;
+    private final ObjectMapper objectMapper;
 
     /** 创建检修任务（自动触发LLM生成步骤） */
     @PostMapping
@@ -130,25 +135,26 @@ public class MaintenanceTaskController {
         return Result.success(null);
     }
 
-    /** 步骤对话辅助（转发到 Python FixAgent，实时SSE流） */
-    @PostMapping(value = "/{taskId}/steps/{stepId}/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> stepChat(
-            @PathVariable Long taskId,
-            @PathVariable Long stepId,
-            @RequestBody Map<String, Object> body) {
-        String sessionId = "task-" + taskId + "-step-" + stepId;
+    /**
+     * 检修步骤助手（任务级一条会话，SSE 流式）。
+     * 自动注入：当前聚焦步骤+证据、全步总览+进度、工人偏好、近 N 轮历史。
+     * body: { focusedStepId?, message, images? }
+     */
+    @PostMapping(value = "/{taskId}/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> taskChat(@PathVariable Long taskId, @RequestBody Map<String, Object> body) {
+        Long userId = BaseContext.getCurrentId();
         String message = (String) body.getOrDefault("message", "");
         @SuppressWarnings("unchecked")
         List<String> images = (List<String>) body.get("images");
+        Long focusedStepId = body.get("focusedStepId") != null
+                ? Long.valueOf(String.valueOf(body.get("focusedStepId"))) : null;
 
-        Map<String, Object> request = new HashMap<>();
-        request.put("session_id", sessionId);
-        request.put("message", message);
-        request.put("mode", "CHAT");
-        request.put("stream", true);
-        if (images != null && !images.isEmpty()) {
-            request.put("images", images);
-        }
+        // 先组装（历史不含本轮），再落库用户消息，避免重复
+        Map<String, Object> request = taskService.assembleAssistantRequest(taskId, focusedStepId, userId, message, images);
+        taskService.saveChatMessage(taskId, userId, focusedStepId, "user", message, images);
+
+        StringBuilder acc = new StringBuilder();
+        AtomicBoolean saved = new AtomicBoolean(false);
 
         return webClient.post()
                 .uri("/ai/chat/stream")
@@ -156,6 +162,32 @@ public class MaintenanceTaskController {
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(request)
                 .retrieve()
-                .bodyToFlux(String.class);
+                .bodyToFlux(String.class)
+                .doOnNext(line -> {
+                    try {
+                        JsonNode node = objectMapper.readTree(line);
+                        if ("token".equals(node.path("event").asText())) {
+                            acc.append(node.path("data").path("content").asText(""));
+                        }
+                    } catch (Exception ignore) {
+                        // 非 JSON 行忽略
+                    }
+                })
+                // 完成 / 出错 / 客户端中断(停止) 都落库助手回复（含部分内容）
+                .doFinally(sig -> {
+                    if (saved.compareAndSet(false, true) && acc.length() > 0) {
+                        try {
+                            taskService.saveChatMessage(taskId, userId, focusedStepId, "assistant", acc.toString(), null);
+                        } catch (Exception e) {
+                            // 落库失败不影响已发出的流
+                        }
+                    }
+                });
+    }
+
+    /** 拉取任务的完整对话历史（前端进面板时渲染） */
+    @GetMapping("/{taskId}/chat/history")
+    public Result<List<TaskChatMessage>> taskChatHistory(@PathVariable Long taskId) {
+        return Result.success(taskService.getChatHistory(taskId));
     }
 }

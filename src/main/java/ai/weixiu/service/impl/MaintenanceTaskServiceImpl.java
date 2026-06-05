@@ -11,6 +11,7 @@ import ai.weixiu.mapper.ManualDeviceMapper;
 import ai.weixiu.mapper.MaintenanceTaskMapper;
 import ai.weixiu.mapper.ProcedureStepMapper;
 import ai.weixiu.mapper.StandardProcedureMapper;
+import ai.weixiu.mapper.TaskChatMessageMapper;
 import ai.weixiu.mapper.TaskStepRecordMapper;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.MaintenanceTaskDTO;
@@ -21,6 +22,7 @@ import ai.weixiu.pojo.vo.StepSourceVO;
 import ai.weixiu.pojo.vo.TaskStepRecordVO;
 import ai.weixiu.service.GraphIngestService;
 import ai.weixiu.service.MaintenanceTaskService;
+import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MioIOUpLoadService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -60,6 +62,8 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     private final MaintenanceManualMapper maintenanceManualMapper;
     private final MioIOUpLoadService mioIOUpLoadService;
     private final ObjectMapper objectMapper;
+    private final TaskChatMessageMapper chatMessageMapper;
+    private final MemoryPreferenceService memoryPreferenceService;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -1102,5 +1106,177 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         } catch (Exception e) {
             log.warn("补充手册证据元数据失败: documentId={}", docId, e);
         }
+    }
+
+    // ==================== 检修步骤助手（任务级 AI 对话） ====================
+
+    private static final int CHAT_HISTORY_MAX_TURNS = 20;
+
+    @Override
+    public Map<String, Object> assembleAssistantRequest(Long taskId, Long focusedStepId, Long userId,
+                                                        String message, List<String> images) {
+        MaintenanceTask task = getTaskOrThrow(taskId);
+        List<TaskStepRecord> steps = stepMapper.selectList(
+                new LambdaQueryWrapper<TaskStepRecord>()
+                        .eq(TaskStepRecord::getTaskId, taskId)
+                        .orderByAsc(TaskStepRecord::getSortOrder));
+
+        // —— 组装检修上下文 ——
+        Map<String, Object> maintenance = new HashMap<>();
+        Map<String, Object> t = new HashMap<>();
+        t.put("deviceName", task.getDeviceName());
+        t.put("faultDescription", task.getFaultDescription());
+        t.put("maintenanceLevel", task.getMaintenanceLevel());
+        maintenance.put("task", t);
+
+        List<String> overview = new ArrayList<>();
+        int doneCount = 0;
+        Integer focusedOrder = null;
+        TaskStepRecord focused = null;
+        for (TaskStepRecord s : steps) {
+            if (isStepDone(s.getStatus())) doneCount++;
+            overview.add("第" + s.getSortOrder() + "步 " + s.getTitle() + "（" + statusLabel(s.getStatus()) + "）");
+            if (focusedStepId != null && focusedStepId.equals(s.getId())) {
+                focused = s;
+                focusedOrder = s.getSortOrder();
+            }
+        }
+        maintenance.put("overview", overview);
+
+        if (focused != null) {
+            TaskStepRecordVO fvo = toStepVO(focused); // 复用：拿到结构化证据
+            Map<String, Object> fs = new HashMap<>();
+            fs.put("sortOrder", fvo.getSortOrder());
+            fs.put("title", fvo.getTitle());
+            fs.put("content", fvo.getContent());
+            fs.put("safetyNote", fvo.getSafetyNote());
+            fs.put("checkpointItems", fvo.getCheckpointItems());
+            String srcText = summarizeSources(fvo.getSources());
+            if (srcText != null) fs.put("sources", srcText);
+            maintenance.put("focusedStep", fs);
+        }
+
+        Map<String, Object> progress = new HashMap<>();
+        progress.put("current", focusedOrder != null ? focusedOrder : "-");
+        progress.put("total", steps.size());
+        progress.put("done", doneCount);
+        maintenance.put("progress", progress);
+
+        // —— 工人偏好（只读，复用现有记忆系统） ——
+        List<Map<String, Object>> prefs = new ArrayList<>();
+        try {
+            List<MemoryPreference> ups = memoryPreferenceService.getUserLevelPreferences(userId);
+            if (ups != null) {
+                for (MemoryPreference p : ups) {
+                    if (p.getContent() != null && !p.getContent().isBlank()) {
+                        Map<String, Object> pm = new HashMap<>();
+                        pm.put("content", p.getContent());
+                        prefs.add(pm);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[助手] 取用户偏好失败 userId={}: {}", userId, e.getMessage());
+        }
+
+        Map<String, Object> context = new HashMap<>();
+        context.put("maintenance", maintenance);
+        if (!prefs.isEmpty()) context.put("user_preferences", prefs);
+        context.put("disable_fast_path", true); // 走完整 Agent 链路，确保上下文被注入
+
+        // —— 近 N 轮历史（此时本轮用户消息尚未入库，不会重复） ——
+        List<Map<String, Object>> history = loadHistoryForLLM(taskId, CHAT_HISTORY_MAX_TURNS);
+
+        Map<String, Object> req = new HashMap<>();
+        req.put("session_id", "task-" + taskId);
+        req.put("message", message);
+        req.put("mode", "CHAT");
+        req.put("stream", true);
+        if (images != null && !images.isEmpty()) req.put("images", images);
+        req.put("context", context);
+        req.put("conversation_history", history);
+        return req;
+    }
+
+    @Override
+    public void saveChatMessage(Long taskId, Long userId, Long focusedStepId, String role,
+                                String content, List<String> images) {
+        TaskChatMessage m = new TaskChatMessage();
+        m.setTaskId(taskId);
+        m.setUserId(userId);
+        m.setFocusedStepId(focusedStepId);
+        m.setRole(role);
+        m.setContent(content);
+        m.setImages(images);
+        m.setCreatedAt(LocalDateTime.now());
+        chatMessageMapper.insert(m);
+    }
+
+    @Override
+    public List<TaskChatMessage> getChatHistory(Long taskId) {
+        return chatMessageMapper.selectList(
+                new LambdaQueryWrapper<TaskChatMessage>()
+                        .eq(TaskChatMessage::getTaskId, taskId)
+                        .orderByAsc(TaskChatMessage::getCreatedAt)
+                        .orderByAsc(TaskChatMessage::getId));
+    }
+
+    /** 取最近 maxTurns*2 条消息（时间正序）回灌 LLM，格式 [{role,content}] */
+    private List<Map<String, Object>> loadHistoryForLLM(Long taskId, int maxTurns) {
+        List<TaskChatMessage> msgs = chatMessageMapper.selectList(
+                new LambdaQueryWrapper<TaskChatMessage>()
+                        .eq(TaskChatMessage::getTaskId, taskId)
+                        .orderByDesc(TaskChatMessage::getCreatedAt)
+                        .orderByDesc(TaskChatMessage::getId)
+                        .last("LIMIT " + (maxTurns * 2)));
+        Collections.reverse(msgs);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (TaskChatMessage m : msgs) {
+            if (m.getContent() == null || m.getContent().isBlank()) continue;
+            Map<String, Object> mm = new HashMap<>();
+            mm.put("role", m.getRole());
+            mm.put("content", m.getContent());
+            out.add(mm);
+        }
+        return out;
+    }
+
+    private boolean isStepDone(String status) {
+        return "COMPLETED".equals(status) || "AI_PASSED".equals(status) || "SKIPPED".equals(status);
+    }
+
+    private String statusLabel(String status) {
+        if (status == null) return "未开始";
+        return switch (status) {
+            case "PENDING" -> "待执行";
+            case "SUBMITTED" -> "验证中";
+            case "AI_PASSED", "COMPLETED" -> "已完成";
+            case "AI_REJECTED" -> "未通过";
+            case "SKIPPED" -> "已跳过";
+            default -> status;
+        };
+    }
+
+    /** 把结构化证据压成一行简短文本，供注入 prompt */
+    private String summarizeSources(List<StepSourceVO> sources) {
+        if (sources == null || sources.isEmpty()) return null;
+        List<String> parts = new ArrayList<>();
+        for (StepSourceVO s : sources) {
+            String type = s.getType() != null ? s.getType() : "";
+            switch (type) {
+                case "template", "template_adjusted" -> parts.add(
+                        "规程《" + nz(s.getProcedureName()) + "》第" + s.getTemplateStepOrder() + "步");
+                case "manual" -> parts.add(
+                        "手册" + (s.getManualName() != null ? "《" + s.getManualName() + "》" : "")
+                                + (s.getSnippet() != null ? "：" + s.getSnippet() : ""));
+                case "graph" -> parts.add("图谱路径：" + nz(s.getPathText()));
+                default -> { }
+            }
+        }
+        return parts.isEmpty() ? null : String.join("；", parts);
+    }
+
+    private String nz(String s) {
+        return s == null ? "" : s;
     }
 }

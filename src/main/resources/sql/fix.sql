@@ -352,3 +352,15 @@ CREATE TABLE IF NOT EXISTS `memory_reflection` (
                                                    INDEX `idx_user_type` (`user_id`, `reflection_type`),
                                                    INDEX `idx_user_status` (`user_id`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户画像反思记录';
+-- ===== 检修步骤助手：任务级 AI 对话消息 =====
+CREATE TABLE IF NOT EXISTS task_chat_message (
+  id BIGINT NOT NULL PRIMARY KEY,
+  task_id BIGINT NOT NULL,
+  user_id BIGINT,
+  focused_step_id BIGINT,
+  role VARCHAR(16) NOT NULL,
+  content MEDIUMTEXT,
+  images JSON,
+  created_at DATETIME,
+  KEY idx_task (task_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='检修任务级AI对话消息';

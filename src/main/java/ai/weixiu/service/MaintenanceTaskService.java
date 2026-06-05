@@ -1,5 +1,6 @@
 package ai.weixiu.service;
 
+import ai.weixiu.entity.TaskChatMessage;
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.MaintenanceTaskDTO;
 import ai.weixiu.pojo.dto.StepExecuteDTO;
@@ -53,4 +54,21 @@ public interface MaintenanceTaskService {
 
     /** 沉淀到知识图谱（CLOSED → 创建图谱节点） */
     void promoteToGraph(Long taskId, Map<String, Object> graphData);
+
+    // ==================== 检修步骤助手（任务级 AI 对话） ====================
+
+    /**
+     * 组装转发给 Python /ai/chat/stream 的请求体：
+     * 注入检修上下文（当前步骤+证据+全步总览+进度）、工人偏好（只读）、近 N 轮对话历史。
+     * 调用时机：在保存本轮用户消息之前，使历史不含当前问题。
+     */
+    Map<String, Object> assembleAssistantRequest(Long taskId, Long focusedStepId, Long userId,
+                                                 String message, List<String> images);
+
+    /** 保存一条任务级对话消息（role = user / assistant） */
+    void saveChatMessage(Long taskId, Long userId, Long focusedStepId, String role,
+                         String content, List<String> images);
+
+    /** 拉取任务的完整对话历史（前端进面板时渲染，时间正序） */
+    List<TaskChatMessage> getChatHistory(Long taskId);
 }
