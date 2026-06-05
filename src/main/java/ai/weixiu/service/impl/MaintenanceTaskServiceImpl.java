@@ -1190,7 +1190,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         Map<String, Object> req = new HashMap<>();
         req.put("session_id", "task-" + taskId);
         req.put("message", message);
-        req.put("mode", "CHAT");
+        req.put("mode", "chat");
         req.put("stream", true);
         if (images != null && !images.isEmpty()) req.put("images", images);
         req.put("context", context);
