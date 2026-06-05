@@ -3,7 +3,9 @@ package ai.weixiu.controller;
 import ai.weixiu.entity.CaseRecord;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.CaseRecordDTO;
+import ai.weixiu.pojo.vo.CaseRecordVO;
 import ai.weixiu.service.CaseRecordService;
+import ai.weixiu.utils.VoConverter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
@@ -19,14 +21,14 @@ public class CaseRecordController {
 
     @PostMapping("/save")
     @Operation(summary = "新增案例记录")
-    public Result<CaseRecord> save(@RequestBody CaseRecordDTO caseRecordDTO) {
-        return Result.success(caseRecordService.save(caseRecordDTO));
+    public Result<CaseRecordVO> save(@RequestBody CaseRecordDTO caseRecordDTO) {
+        return Result.success(VoConverter.convert(caseRecordService.save(caseRecordDTO), CaseRecordVO.class));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询案例记录")
-    public Result<CaseRecord> findById(@PathVariable String id) {
-        return Result.success(caseRecordService.findById(id).get());
+    public Result<CaseRecordVO> findById(@PathVariable String id) {
+        return Result.success(VoConverter.convert(caseRecordService.findById(id).get(), CaseRecordVO.class));
     }
 
     @DeleteMapping("/{id}")
@@ -38,7 +40,7 @@ public class CaseRecordController {
 
     @PutMapping("/update")
     @Operation(summary = "更新案例记录信息")
-    public Result<CaseRecord> update(@RequestBody CaseRecordDTO caseRecordDTO) {
-        return Result.success(caseRecordService.update(caseRecordDTO));
+    public Result<CaseRecordVO> update(@RequestBody CaseRecordDTO caseRecordDTO) {
+        return Result.success(VoConverter.convert(caseRecordService.update(caseRecordDTO), CaseRecordVO.class));
     }
 }

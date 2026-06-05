@@ -2,9 +2,11 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.config.RabbitMQConfig;
 import ai.weixiu.entity.*;
+import ai.weixiu.enumerate.BucketEnum;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.TaskStateException;
 import ai.weixiu.mapper.KnowledgeDocumentMapper;
+import ai.weixiu.mapper.MaintenanceManualMapper;
 import ai.weixiu.mapper.ManualDeviceMapper;
 import ai.weixiu.mapper.MaintenanceTaskMapper;
 import ai.weixiu.mapper.ProcedureStepMapper;
@@ -15,13 +17,17 @@ import ai.weixiu.pojo.dto.MaintenanceTaskDTO;
 import ai.weixiu.pojo.dto.StepExecuteDTO;
 import ai.weixiu.pojo.query.MaintenanceTaskQuery;
 import ai.weixiu.pojo.vo.MaintenanceTaskVO;
+import ai.weixiu.pojo.vo.StepSourceVO;
 import ai.weixiu.pojo.vo.TaskStepRecordVO;
 import ai.weixiu.service.GraphIngestService;
 import ai.weixiu.service.MaintenanceTaskService;
+import ai.weixiu.service.MioIOUpLoadService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.toolkit.Db;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +57,9 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     private final ManualDeviceMapper manualDeviceMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final GraphIngestService graphIngestService;
+    private final MaintenanceManualMapper maintenanceManualMapper;
+    private final MioIOUpLoadService mioIOUpLoadService;
+    private final ObjectMapper objectMapper;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -716,21 +725,14 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         // 1. 从所有步骤的 sources 中提取 type=manual 的 documentId
         Set<String> documentIds = new HashSet<>();
         for (TaskStepRecordVO step : steps) {
-            Object sourcesObj = step.getSources();
-            if (!(sourcesObj instanceof List)) {
+            List<StepSourceVO> sourcesList = step.getSources();
+            if (sourcesList == null) {
                 continue;
             }
-            List<?> sourcesList = (List<?>) sourcesObj;
-            for (Object item : sourcesList) {
-                if (!(item instanceof Map)) {
-                    continue;
-                }
-                Map<String, Object> source = (Map<String, Object>) item;
-                if ("manual".equals(source.get("type")) && source.get("documentId") != null) {
-                    String docId = source.get("documentId").toString();
-                    if (StringUtils.hasText(docId)) {
-                        documentIds.add(docId);
-                    }
+            for (StepSourceVO source : sourcesList) {
+                if (source != null && "manual".equals(source.getType())
+                        && StringUtils.hasText(source.getDocumentId())) {
+                    documentIds.add(source.getDocumentId());
                 }
             }
         }
@@ -833,6 +835,10 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
                         .orderByAsc(ProcedureStep::getStepOrder)
         );
 
+        // 查出规程名称用于 sources 模板来源标记
+        StandardProcedure procedure = procedureMapper.selectById(procedureId);
+        String procedureName = procedure != null ? procedure.getName() : "";
+
         List<TaskStepRecord> records = templateSteps.stream().map(ps -> {
             TaskStepRecord record = new TaskStepRecord();
             record.setTaskId(taskId);
@@ -849,6 +855,15 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             record.setStatus("PENDING");
             record.setGenerateConfidence(java.math.BigDecimal.ONE);
             record.setCreatedAt(LocalDateTime.now());
+
+            // 标记来源：来自标准规程模板（用 HashMap 容忍 stepOrder 可能为 null）
+            Map<String, Object> templateSource = new HashMap<>();
+            templateSource.put("type", "template");
+            templateSource.put("procedureId", procedureId);
+            templateSource.put("procedureName", procedureName);
+            templateSource.put("templateStepOrder", ps.getStepOrder());
+            record.setSources(new ArrayList<>(List.of(templateSource)));
+
             return record;
         }).collect(Collectors.toList());
         Db.saveBatch(records);
@@ -909,6 +924,9 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         msg.put("reportImages", task.getReportImages());
         msg.put("generateMode", "AI_ADAPT");
         msg.put("procedureSteps", stepList);
+        msg.put("procedureId", procedureId);
+        StandardProcedure proc = procedureMapper.selectById(procedureId);
+        msg.put("procedureName", proc != null ? proc.getName() : "");
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.TASK_EXCHANGE,
                 RabbitMQConfig.TASK_GENERATE_KEY,
@@ -984,7 +1002,105 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
 
     private TaskStepRecordVO toStepVO(TaskStepRecord record) {
         TaskStepRecordVO vo = new TaskStepRecordVO();
-        BeanUtils.copyProperties(record, vo);
+        // sources 单独结构化解析，避免 Object → List<StepSourceVO> 直接 copy 失败
+        BeanUtils.copyProperties(record, vo, "sources");
+        vo.setSources(parseStepSources(record.getSources()));
         return vo;
+    }
+
+    /**
+     * 将数据库中存储的 sources JSON（可能是 List&lt;Map&gt; 或 JSON 字符串）
+     * 结构化解析为 {@link StepSourceVO} 列表，并对 manual 类型补充手册元数据/PDF 链接。
+     */
+    @SuppressWarnings("unchecked")
+    private List<StepSourceVO> parseStepSources(Object sourcesObj) {
+        if (sourcesObj == null) {
+            return List.of();
+        }
+        List<Map<String, Object>> rawList;
+        if (sourcesObj instanceof List<?> list) {
+            rawList = (List<Map<String, Object>>) list;
+        } else if (sourcesObj instanceof String str && !str.isBlank()) {
+            try {
+                rawList = objectMapper.readValue(str, new TypeReference<>() {});
+            } catch (Exception e) {
+                log.warn("解析 sources JSON 失败: {}", e.getMessage());
+                return List.of();
+            }
+        } else {
+            return List.of();
+        }
+
+        List<StepSourceVO> result = new ArrayList<>();
+        for (Map<String, Object> raw : rawList) {
+            if (raw == null) continue;
+            StepSourceVO src = new StepSourceVO();
+            src.setType((String) raw.get("type"));
+
+            switch (src.getType() != null ? src.getType() : "") {
+                case "template", "template_adjusted" -> {
+                    if (raw.get("procedureId") instanceof Number num) {
+                        src.setProcedureId(num.longValue());
+                    }
+                    src.setProcedureName((String) raw.get("procedureName"));
+                    if (raw.get("templateStepOrder") instanceof Number num) {
+                        src.setTemplateStepOrder(num.intValue());
+                    }
+                    src.setAdjustmentNote((String) raw.get("adjustmentNote"));
+                }
+                case "manual" -> {
+                    src.setDocumentId((String) raw.get("documentId"));
+                    src.setChunkId((String) raw.get("chunkId"));
+                    src.setSnippet((String) raw.get("snippet"));
+                    src.setSectionTitle((String) raw.get("sectionTitle"));
+                    if (raw.get("page") instanceof Number num) {
+                        src.setPage(num.intValue());
+                    }
+                    // 反查手册名称 + 生成 PDF 预签名 URL
+                    enrichManualSource(src);
+                }
+                case "graph" -> {
+                    src.setPathText((String) raw.get("pathText"));
+                    src.setFaultName((String) raw.get("faultName"));
+                    src.setSolutionTitle((String) raw.get("solutionTitle"));
+                }
+                default -> {
+                    // ai_generated 或其他未知类型，只保留 type
+                }
+            }
+            result.add(src);
+        }
+        return result;
+    }
+
+    /**
+     * 为 manual 类型证据补充手册名称与 PDF 预签名访问 URL。
+     * 链路：documentId → knowledge_document.manual_id → maintenance_manual + minio 对象名 → 预签名 URL
+     */
+    private void enrichManualSource(StepSourceVO src) {
+        String docId = src.getDocumentId();
+        if (docId == null || docId.isBlank()) return;
+
+        try {
+            KnowledgeDocument doc = knowledgeDocumentMapper.selectOne(
+                    Wrappers.<KnowledgeDocument>lambdaQuery()
+                            .eq(KnowledgeDocument::getDocumentId, docId)
+                            .last("LIMIT 1"));
+            if (doc == null || doc.getManualId() == null) return;
+
+            MaintenanceManual manual = maintenanceManualMapper.selectById(doc.getManualId());
+            if (manual == null) return;
+
+            src.setManualId(manual.getId());
+            src.setManualName(manual.getManualName());
+
+            // 生成 PDF 预签名 URL（带页码时前端拼 #page=N）
+            if (doc.getMinioObjectName() != null && !doc.getMinioObjectName().isBlank()) {
+                src.setPdfUrl(mioIOUpLoadService.getPresignedUrl(
+                        doc.getMinioObjectName(), BucketEnum.PRIVATE, 60));
+            }
+        } catch (Exception e) {
+            log.warn("补充手册证据元数据失败: documentId={}", docId, e);
+        }
     }
 }

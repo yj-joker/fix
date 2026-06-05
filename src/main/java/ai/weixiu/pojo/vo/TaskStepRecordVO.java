@@ -28,7 +28,8 @@ public class TaskStepRecordVO {
     private Boolean checkpointConfirmed;
 
     // ===== 步骤来源溯源 =====
-    private Object sources;
+    /** 步骤来源证据列表（结构化） */
+    private List<StepSourceVO> sources;
     private BigDecimal generateConfidence;
 
     // ===== AI 验收 =====

@@ -8,6 +8,7 @@ import ai.weixiu.pojo.query.ComponentQuery;
 import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.service.ComponentService;
+import ai.weixiu.utils.VoConverter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
@@ -25,14 +26,14 @@ public class ComponentController {
 
     @PostMapping("/save")
     @Operation(summary = "新增部件")
-    public Result<Component> save(@RequestBody ComponentDTO componentDTO) {
-        return Result.success(componentService.save(componentDTO));
+    public Result<ComponentVO> save(@RequestBody ComponentDTO componentDTO) {
+        return Result.success(VoConverter.convert(componentService.save(componentDTO), ComponentVO.class));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询部件")
-    public Result<Component> findById(@PathVariable String id) {
-        return Result.success(componentService.findById(id).get());
+    public Result<ComponentVO> findById(@PathVariable String id) {
+        return Result.success(VoConverter.convert(componentService.findById(id).get(), ComponentVO.class));
     }
 
     @DeleteMapping("/{id}")
@@ -44,8 +45,8 @@ public class ComponentController {
 
     @PutMapping("/update")
     @Operation(summary = "更新部件信息")
-    public Result<Component> update(@RequestBody ComponentDTO componentDTO) {
-        return Result.success(componentService.update(componentDTO));
+    public Result<ComponentVO> update(@RequestBody ComponentDTO componentDTO) {
+        return Result.success(VoConverter.convert(componentService.update(componentDTO), ComponentVO.class));
     }
     @PostMapping("/faults")
     @Operation(summary = "查询部件的故障")

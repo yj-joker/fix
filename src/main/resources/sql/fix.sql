@@ -297,3 +297,58 @@ CREATE TABLE IF NOT EXISTS `manual_device` (
     INDEX `idx_device_id` (`device_id`),
     INDEX `idx_manual_id` (`manual_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '手册-设备关联表';
+
+-- Phase 2: 记忆召回追踪表
+CREATE TABLE IF NOT EXISTS `memory_recall_trace` (
+                                                     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                                                     `session_id` BIGINT NOT NULL COMMENT '会话ID',
+                                                     `user_id` BIGINT NOT NULL COMMENT '用户ID',
+                                                     `round_no` INT NOT NULL COMMENT '对话轮次',
+                                                     `query_text` VARCHAR(500) COMMENT '用户原始消息（截断）',
+                                                     `fact_count` INT DEFAULT 0 COMMENT '召回事实数量',
+                                                     `fact_ids` TEXT COMMENT '召回的事实ID列表（JSON数组）',
+                                                     `fact_scores` TEXT COMMENT '对应的相似度分数列表（JSON数组）',
+                                                     `fact_contents` TEXT COMMENT '召回的事实内容摘要列表（JSON数组）',
+                                                     `preference_count` INT DEFAULT 0 COMMENT '注入偏好数量',
+                                                     `unresolved_count` INT DEFAULT 0 COMMENT '注入待办数量',
+                                                     `has_summary` TINYINT(1) DEFAULT 0 COMMENT '是否有历史摘要',
+                                                     `total_latency_ms` INT COMMENT '总耗时(ms)',
+                                                     `fact_latency_ms` INT COMMENT '事实检索耗时(ms)',
+                                                     `preference_latency_ms` INT COMMENT '偏好查询耗时(ms)',
+                                                     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                                     INDEX `idx_session_round` (`session_id`, `round_no`),
+                                                     INDEX `idx_user_id` (`user_id`),
+                                                     INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='记忆召回追踪记录';
+
+-- Phase 3: memory_fact 表扩展多因子排序字段
+ALTER TABLE `memory_fact`
+    ADD COLUMN `importance` TINYINT DEFAULT 5 COMMENT '重要度 1-10，默认5（中等）',
+    ADD COLUMN `confidence` DECIMAL(3,2) DEFAULT 0.80 COMMENT '置信度 0.00-1.00',
+    ADD COLUMN `last_used_at` DATETIME DEFAULT NULL COMMENT '最后一次被召回的时间',
+    ADD COLUMN `usage_count` INT DEFAULT 0 COMMENT '被召回的总次数';
+
+-- Phase 4: memory_fact 表新增维修业务维度字段
+ALTER TABLE `memory_fact`
+    ADD COLUMN `site_id` BIGINT DEFAULT NULL COMMENT '场地ID（事实关联的场地）',
+    ADD COLUMN `equipment_id` BIGINT DEFAULT NULL COMMENT '设备ID（事实关联的设备）',
+    ADD COLUMN `device_type` VARCHAR(100) DEFAULT NULL COMMENT '设备类型（如：液压泵、电动机）',
+    ADD COLUMN `task_id` BIGINT DEFAULT NULL COMMENT '检修任务ID（事实关联的检修任务）',
+    ADD INDEX `idx_device_type` (`device_type`),
+    ADD INDEX `idx_equipment_id` (`equipment_id`);
+
+-- Phase 5: 用户画像反思表
+CREATE TABLE IF NOT EXISTS `memory_reflection` (
+                                                   `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                                                   `user_id` BIGINT NOT NULL COMMENT '用户ID',
+                                                   `reflection_type` VARCHAR(50) NOT NULL COMMENT '画像类型：device_expertise/fault_pattern/work_style/safety_awareness/overall',
+                                                   `content` TEXT NOT NULL COMMENT '画像内容（自然语言描述）',
+                                                   `evidence_fact_count` INT DEFAULT 0 COMMENT '归纳所基于的事实数量',
+                                                   `confidence` DECIMAL(3,2) DEFAULT 0.70 COMMENT '画像置信度',
+                                                   `version` INT DEFAULT 1 COMMENT '版本号（每次反思+1）',
+                                                   `status` VARCHAR(20) DEFAULT 'active' COMMENT 'active/archived',
+                                                   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                                   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                                   INDEX `idx_user_type` (`user_id`, `reflection_type`),
+                                                   INDEX `idx_user_status` (`user_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户画像反思记录';

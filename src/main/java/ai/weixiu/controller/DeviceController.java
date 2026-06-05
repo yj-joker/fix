@@ -11,6 +11,7 @@ import ai.weixiu.pojo.vo.DeviceOverviewVO;
 import ai.weixiu.pojo.vo.DeviceVO;
 import ai.weixiu.service.DeviceService;
 import ai.weixiu.utils.CreateEntityUtils;
+import ai.weixiu.utils.VoConverter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
@@ -29,8 +30,8 @@ public class DeviceController {
 
     @PostMapping("/save")
     @Operation(summary = "新增设备")
-    public Result<Device> save(@RequestBody DeviceDTO deviceDTO) {
-        return Result.success(deviceService.save(deviceDTO));
+    public Result<DeviceVO> save(@RequestBody DeviceDTO deviceDTO) {
+        return Result.success(VoConverter.convert(deviceService.save(deviceDTO), DeviceVO.class));
     }
 
     @DeleteMapping("/{id}")
@@ -42,8 +43,8 @@ public class DeviceController {
 
     @PutMapping("/update")
     @Operation(summary = "更新设备信息")
-    public Result<Device> update(@RequestBody DeviceDTO deviceDTO) {
-        return Result.success(deviceService.update(deviceDTO));
+    public Result<DeviceVO> update(@RequestBody DeviceDTO deviceDTO) {
+        return Result.success(VoConverter.convert(deviceService.update(deviceDTO), DeviceVO.class));
     }
     @GetMapping("/{id}")
     @Operation(summary = "根据 ID 查询设备概览")
