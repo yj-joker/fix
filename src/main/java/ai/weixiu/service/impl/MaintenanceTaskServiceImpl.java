@@ -24,6 +24,7 @@ import ai.weixiu.service.GraphIngestService;
 import ai.weixiu.service.MaintenanceTaskService;
 import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MioIOUpLoadService;
+import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -64,6 +65,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     private final ObjectMapper objectMapper;
     private final TaskChatMessageMapper chatMessageMapper;
     private final MemoryPreferenceService memoryPreferenceService;
+    private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -875,6 +877,25 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         return templateSteps.size();
     }
 
+    /**
+     * 将图片的 MinIO URL 转为内联 Base64，供云端多模态 LLM 使用（报告图片 / 步骤照片通用）。
+     *
+     * <p>云端 DashScope 无法访问 localhost MinIO，必须先转 Base64（与 AI 对话链路
+     * {@code AiServiceImpl.chat} 的处理保持一致），否则多模态调用会返回 400 并降级为纯文本。
+     * 转换失败时降级为原始 URL，不阻断后续流程。</p>
+     */
+    private List<String> imagesForLlm(List<String> urls, String logCtx) {
+        if (urls == null || urls.isEmpty()) {
+            return urls;
+        }
+        try {
+            return multimodalEmbeddingUtils.downloadImagesToBase64(urls);
+        } catch (Exception e) {
+            log.warn("[任务] 图片转Base64失败，降级为原始URL {}: {}", logCtx, e.getMessage());
+            return urls;
+        }
+    }
+
     private void sendGenerateMessage(MaintenanceTask task) {
         Map<String, Object> msg = new HashMap<>();
         msg.put("taskId", task.getId());
@@ -883,7 +904,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         msg.put("deviceName", task.getDeviceName());
         msg.put("faultDescription", task.getFaultDescription());
         msg.put("urgencyLevel", task.getUrgencyLevel());
-        msg.put("reportImages", task.getReportImages());
+        msg.put("reportImages", imagesForLlm(task.getReportImages(), "taskId=" + task.getId()));
         msg.put("generateMode", "AI_GENERATE");
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.TASK_EXCHANGE,
@@ -925,7 +946,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         msg.put("deviceName", task.getDeviceName());
         msg.put("faultDescription", task.getFaultDescription());
         msg.put("urgencyLevel", task.getUrgencyLevel());
-        msg.put("reportImages", task.getReportImages());
+        msg.put("reportImages", imagesForLlm(task.getReportImages(), "taskId=" + task.getId()));
         msg.put("generateMode", "AI_ADAPT");
         msg.put("procedureSteps", stepList);
         msg.put("procedureId", procedureId);
@@ -947,7 +968,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         msg.put("stepTitle", step.getTitle());
         msg.put("stepContent", step.getContent());
         msg.put("safetyNote", step.getSafetyNote());
-        msg.put("images", step.getImages());
+        msg.put("images", imagesForLlm(step.getImages(), "taskId=" + task.getId() + " stepId=" + step.getId()));
         msg.put("note", step.getNote());
         msg.put("deviceName", task.getDeviceName());
         msg.put("faultDescription", task.getFaultDescription());
