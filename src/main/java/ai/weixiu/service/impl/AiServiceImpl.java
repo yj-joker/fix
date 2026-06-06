@@ -264,18 +264,29 @@ public class AiServiceImpl implements AiService {
                 .flatMap(json -> {
                     try {
                         JsonNode root = objectMapper.readTree(json);
-                        if (!"token".equals(root.path("event").asText())) {
-                            return Flux.empty();
+                        String event = root.path("event").asText();
+                        if ("token".equals(event)) {
+                            String content = root.path("data").path("content").asText("");
+                            return content.isEmpty() ? Flux.empty() : Flux.just(content);
                         }
-                        String content = root.path("data").path("content").asText("");
-                        if (content.isEmpty()) {
-                            return Flux.empty();
+                        // 透出上游错误：Python 出错时只会发 error 事件、没有 token，
+                        // 若继续丢弃会让前端收到「空响应」。这里把错误信息作为内容下发，
+                        // 让用户看到真实原因，而不是一片空白。
+                        if ("error".equals(event)) {
+                            String msg = root.path("data").path("message")
+                                    .asText("AI 服务暂时不可用，请稍后重试");
+                            log.warn("Python 流式对话返回错误事件: {}", msg);
+                            return Flux.just("⚠️ " + msg);
                         }
-                        return Flux.just(content);
+                        return Flux.empty();
                     } catch (Exception e) {
                         return Flux.empty();
                     }
-                });
+                })
+                // 兜底：整条流没有任何可展示内容时（既无 token 也无 error），
+                // 给前端一句明确提示，避免出现「空响应」。
+                .switchIfEmpty(Flux.defer(() ->
+                        Flux.just("⚠️ AI 未返回任何内容，请稍后重试")));
     }
 
     private void saveAiReply(AiSession finalAiSession, Long userId, StringBuilder fullResponse) {
