@@ -1,8 +1,11 @@
 package ai.weixiu.service.impl;
 
+import ai.weixiu.entity.ManualDevice;
+import ai.weixiu.mapper.ManualDeviceMapper;
 import ai.weixiu.pojo.dto.GraphIngestDTO;
 import ai.weixiu.service.GraphIngestService;
 import ai.weixiu.utils.EmbeddingUtils;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.neo4j.core.Neo4jClient;
@@ -19,6 +22,7 @@ public class GraphIngestServiceImpl implements GraphIngestService {
 
     private final Neo4jClient neo4jClient;
     private final EmbeddingUtils embeddingUtils;
+    private final ManualDeviceMapper manualDeviceMapper;
 
     @Override
     @Transactional
@@ -137,6 +141,24 @@ public class GraphIngestServiceImpl implements GraphIngestService {
                 neo4jClient.query("MATCH (f:Fault{id:$f}),(s:Solution{id:$s}) MERGE (f)-[:HAS_SOLUTION]->(s)")
                         .bind(fid).to("f").bind(sid).to("s").run();
             }
+        }
+
+        // 抽取入库完成后：若该手册在上传时已被管理员关联了设备（manual_device 已有行），
+        // 此时部件刚刚 MERGE 进图谱，补建 Device-[:OWNS]->Component 边。
+        // 解决"先上传关联设备、后异步抽取"的时序问题——上传时连不上的边在这里兜底补齐。
+        try {
+            List<ManualDevice> linkedDevices = manualDeviceMapper.selectList(
+                    Wrappers.<ManualDevice>lambdaQuery().eq(ManualDevice::getManualId, manualId));
+            for (ManualDevice md : linkedDevices) {
+                int linked = linkManualComponentsToDevice(manualId, md.getDeviceId());
+                if (linked > 0) {
+                    log.info("[手册图谱入库] 抽取后补边 manualId={}, deviceId={}, 部件数={}",
+                            manualId, md.getDeviceId(), linked);
+                }
+            }
+        } catch (Exception e) {
+            // 补边失败不影响实体入库主流程
+            log.warn("[手册图谱入库] 抽取后补 Device-OWNS 边失败 manualId={}: {}", manualId, e.getMessage());
         }
 
         log.info("[手册图谱入库] manualId={} 处理节点={} (comp={},fault={},sol={})",

@@ -15,6 +15,9 @@ import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.MaintenanceManualDTO;
 import ai.weixiu.pojo.query.MaintenanceManualQuery;
 import ai.weixiu.pojo.vo.MaintenanceManualVO;
+import ai.weixiu.entity.Device;
+import ai.weixiu.service.DeviceService;
+import ai.weixiu.service.GraphIngestService;
 import ai.weixiu.service.KnowledgeDocumentService;
 import ai.weixiu.service.MaintenanceManualService;
 import ai.weixiu.service.MioIOUpLoadService;
@@ -57,6 +60,8 @@ public class MaintenanceManualServiceImpl
     private final KnowledgeImportProducer knowledgeImportProducer;
     private final ManualDeviceMapper manualDeviceMapper;
     private final ManualReadRecordMapper manualReadRecordMapper;
+    private final DeviceService deviceService;
+    private final GraphIngestService graphIngestService;
 
     @Override
     @Transactional
@@ -72,11 +77,58 @@ public class MaintenanceManualServiceImpl
         manual.setUpdatedAt(now);
         save(manual);
 
-        // 2. 上传第一版文档（文件信息将在 onParseSuccess 回调中统一回写到 manual）
+        // 2. 写入手册-设备关联（管理员显式多选；通用手册可不选）
+        syncManualDevices(manual.getId(), maintenanceManualDTO.getDeviceIds());
+
+        // 3. 上传第一版文档（文件信息将在 onParseSuccess 回调中统一回写到 manual）
         knowledgeDocumentService.uploadNewVersion(manual.getId(), file);
 
         log.info("新增手册成功: {}, 已发起 v1 解析", manual.getId());
         return manual;
+    }
+
+    /**
+     * 全量同步手册-设备关联（manual_device），并尝试即时补图谱 OWNS 边。
+     *
+     * <p>语义：传入的 deviceIds 即为该手册的最终适用设备集合——先清空旧关联再按列表重建，
+     * 设备名从 Neo4j Device 节点按 id 解析（找不到的 id 跳过）。每写入一条关联，立即调用
+     * {@code linkManualComponentsToDevice} 尝试把该手册已抽取的部件挂到设备上：
+     * 若部件尚未抽取完（上传即关联的常见情况），此处匹配 0 条不报错，待
+     * {@code GraphIngestService.ingestFromManual} 抽取入库末尾再统一补边。</p>
+     *
+     * @param deviceIds 适用设备 UUID 列表；空列表表示清空关联（通用手册）
+     */
+    private void syncManualDevices(Long manualId, List<String> deviceIds) {
+        // 先清空旧关联（全量覆盖语义）
+        manualDeviceMapper.delete(new LambdaQueryWrapper<ManualDevice>()
+                .eq(ManualDevice::getManualId, manualId));
+
+        if (deviceIds == null || deviceIds.isEmpty()) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String deviceId : deviceIds) {
+            if (!StringUtils.hasText(deviceId) || !seen.add(deviceId)) {
+                continue; // 跳过空值与重复 id
+            }
+            Device device = deviceService.findById(deviceId).orElse(null);
+            if (device == null) {
+                log.warn("[手册-设备] 设备不存在，跳过关联 manualId={}, deviceId={}", manualId, deviceId);
+                continue;
+            }
+            ManualDevice md = new ManualDevice();
+            md.setManualId(manualId);
+            md.setDeviceId(deviceId);
+            md.setDeviceName(device.getName());
+            md.setCreatedAt(now);
+            manualDeviceMapper.insert(md);
+
+            // 即时补边：部件已抽取则连上 Device-[:OWNS]->Component，未抽取则返回 0（安全）
+            int linked = graphIngestService.linkManualComponentsToDevice(manualId, deviceId);
+            log.info("[手册-设备] 关联 manualId={}, deviceId={}, 即时补边部件数={}", manualId, deviceId, linked);
+        }
     }
 
     @Override
@@ -160,6 +212,11 @@ public class MaintenanceManualServiceImpl
 
         manual.setUpdatedAt(LocalDateTime.now());
         updateById(manual);
+
+        // 同步手册-设备关联：deviceIds 为 null 表示本次未携带（不动），否则全量覆盖
+        if (maintenanceManualDTO.getDeviceIds() != null) {
+            syncManualDevices(manual.getId(), maintenanceManualDTO.getDeviceIds());
+        }
 
         // 有新文件时上传新版本
         if (file != null && !file.isEmpty()) {

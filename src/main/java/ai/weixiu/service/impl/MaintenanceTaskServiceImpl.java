@@ -1213,7 +1213,10 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         req.put("message", message);
         req.put("mode", "chat");
         req.put("stream", true);
-        if (images != null && !images.isEmpty()) req.put("images", images);
+        // 图片需转内联 Base64 再发给云端多模态 LLM（云端无法访问 localhost MinIO，否则 400）
+        if (images != null && !images.isEmpty()) {
+            req.put("images", imagesForLlm(images, "assistant taskId=" + taskId));
+        }
         req.put("context", context);
         req.put("conversation_history", history);
         return req;
