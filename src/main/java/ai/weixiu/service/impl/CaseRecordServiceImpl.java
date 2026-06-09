@@ -3,14 +3,21 @@ package ai.weixiu.service.impl;
 import ai.weixiu.entity.CaseRecord;
 import ai.weixiu.entity.MaintenanceTask;
 import ai.weixiu.entity.TaskStepRecord;
+import ai.weixiu.enumerate.RelationType;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.TaskStateException;
 import ai.weixiu.mapper.MaintenanceTaskMapper;
 import ai.weixiu.mapper.TaskStepRecordMapper;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.CaseRecordDTO;
+import ai.weixiu.pojo.dto.RelationCreateDTO;
 import ai.weixiu.pojo.vo.CaseDraftVO;
+import ai.weixiu.pojo.vo.CaseRecordVO;
+import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.repository.CaseRecordRepository;
 import ai.weixiu.service.CaseRecordService;
+import ai.weixiu.service.FaultService;
+import ai.weixiu.service.RelationService;
 import ai.weixiu.utils.BaseContext;
 import ai.weixiu.utils.BuildStringUtils;
 import ai.weixiu.utils.MultimodalEmbeddingUtils;
@@ -27,6 +34,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +54,12 @@ public class CaseRecordServiceImpl implements CaseRecordService {
     private final Neo4jClient neo4jClient;
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+    private final FaultService faultService;
+    private final RelationService relationService;
     private final String notFoundMessage = "案例记录不存在";
+
+    /** 案例尽力连边时，故障向量匹配的最小相似度（低于则不连，不新建 Fault） */
+    private static final double CASE_FAULT_MIN_SCORE = 0.7;
 
     @Override
     @Transactional
@@ -231,6 +244,109 @@ public class CaseRecordServiceImpl implements CaseRecordService {
 
     private static String nz(String s) {
         return s == null ? "" : s;
+    }
+
+    @Override
+    public PageResult<CaseRecordVO> pending(int page, int size) {
+        int p = Math.max(page, 1);
+        long skip = (long) (p - 1) * size;
+        List<CaseRecord> list = caseRecordRepository.findByStatus("pending", skip, size);
+        long total = caseRecordRepository.countByStatus("pending");
+        return new PageResult<>(toVOList(list), total, p, size);
+    }
+
+    @Override
+    @Transactional
+    public void approve(String id, CaseRecordDTO dto) {
+        CaseRecord c = caseRecordRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException(notFoundMessage));
+        if (!"pending".equals(c.getStatus())) {
+            throw new TaskStateException("只有待审案例可以审核，当前状态: " + c.getStatus());
+        }
+        // 1. 管理员编辑覆盖（仅覆盖传入的非空字段，避免误清空）
+        if (dto != null) {
+            if (StringUtils.hasText(dto.getTitle())) c.setTitle(dto.getTitle());
+            if (dto.getSummary() != null) c.setSummary(dto.getSummary());
+            if (dto.getDiagnosis() != null) c.setDiagnosis(dto.getDiagnosis());
+            if (dto.getResolution() != null) c.setResolution(dto.getResolution());
+            if (dto.getResult() != null) c.setResult(dto.getResult());
+            if (dto.getExperienceSummary() != null) c.setExperienceSummary(dto.getExperienceSummary());
+            if (dto.getTags() != null) c.setTags(dto.getTags());
+            if (dto.getDowntime() != null) c.setDowntime(dto.getDowntime());
+            if (dto.getCost() != null) c.setCost(dto.getCost());
+            if (dto.getImageUrls() != null) c.setImageUrls(dto.getImageUrls());
+            if (dto.getDeviceId() != null) c.setDeviceId(dto.getDeviceId());
+            if (dto.getFaultName() != null) c.setFaultName(dto.getFaultName());
+        }
+        // 2. 强制向量化（失败抛异常阻塞审核，事务回滚；前端可重试）
+        String embeddingText = buildStringUtils.buildCaseRecordEmbeddingText(c);
+        c.setMultimodalEmbedding(
+                multimodalEmbeddingUtils.getMultimodalEmbedding(embeddingText, c.getImageUrls()));
+        // 3. 置审核态并落库
+        c.setStatus("approved");
+        c.setReviewedById(BaseContext.getCurrentId());
+        c.setReviewedAt(LocalDateTime.now());
+        caseRecordRepository.save(c);
+        // 4. 尽力连边（非阻塞）：case→Fault，向量匹配已有 Fault，命中才连，不新建 Fault
+        if (StringUtils.hasText(c.getFaultName())) {
+            try {
+                List<FaultVO> faults = faultService.getFaultByEmbedding(c.getFaultName(), 1L, CASE_FAULT_MIN_SCORE);
+                if (faults != null && !faults.isEmpty() && faults.get(0).getId() != null) {
+                    RelationCreateDTO rel = new RelationCreateDTO();
+                    rel.setSourceId(c.getId());
+                    rel.setTargetId(faults.get(0).getId());
+                    rel.setRelationType(RelationType.CASE_RECORD_RECORDED_FAULT);
+                    relationService.create(rel);
+                    log.info("[案例] 连边 case={} -> fault={} ({})",
+                            c.getId(), faults.get(0).getId(), faults.get(0).getName());
+                } else {
+                    log.info("[案例] 未匹配到相似Fault，跳过连边 case={} faultName={}", c.getId(), c.getFaultName());
+                }
+            } catch (Exception e) {
+                log.warn("[案例] 连边失败（非阻塞）case={}: {}", c.getId(), e.getMessage());
+            }
+        }
+        log.info("[案例] 审核通过 id={} reviewedBy={}", c.getId(), c.getReviewedById());
+    }
+
+    @Override
+    @Transactional
+    public void reject(String id, String comment) {
+        CaseRecord c = caseRecordRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException(notFoundMessage));
+        if (!"pending".equals(c.getStatus())) {
+            throw new TaskStateException("只有待审案例可以驳回，当前状态: " + c.getStatus());
+        }
+        c.setStatus("rejected");
+        c.setReviewComment(comment);
+        c.setReviewedById(BaseContext.getCurrentId());
+        c.setReviewedAt(LocalDateTime.now());
+        caseRecordRepository.save(c);
+        log.info("[案例] 驳回 id={} reviewedBy={}", c.getId(), c.getReviewedById());
+    }
+
+    @Override
+    public PageResult<CaseRecordVO> mine(int page, int size) {
+        Long uid = BaseContext.getCurrentId();
+        int p = Math.max(page, 1);
+        long skip = (long) (p - 1) * size;
+        List<CaseRecord> list = caseRecordRepository.findBySubmittedBy(uid, skip, size);
+        long total = caseRecordRepository.countBySubmittedBy(uid);
+        return new PageResult<>(toVOList(list), total, p, size);
+    }
+
+    private List<CaseRecordVO> toVOList(List<CaseRecord> list) {
+        List<CaseRecordVO> out = new ArrayList<>();
+        if (list != null) {
+            for (CaseRecord c : list) out.add(toVO(c));
+        }
+        return out;
+    }
+
+    private CaseRecordVO toVO(CaseRecord c) {
+        CaseRecordVO vo = new CaseRecordVO();
+        BeanUtils.copyProperties(c, vo);
+        return vo;
     }
 
     /** 图片 URL 转 Base64（云端多模态需要），失败降级原始 URL，不阻断起草。 */

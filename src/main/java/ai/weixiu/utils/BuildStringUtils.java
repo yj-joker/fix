@@ -87,11 +87,15 @@ public class BuildStringUtils {
         return """
                 案例标题：%s
                 案例摘要：%s
+                诊断过程：%s
                 解决过程：%s
+                经验总结：%s
                 """.formatted(
                 caseRecord.getTitle(),
                 caseRecord.getSummary(),
-                caseRecord.getResolution()
+                caseRecord.getDiagnosis(),
+                caseRecord.getResolution(),
+                caseRecord.getExperienceSummary()
         );
     }
 

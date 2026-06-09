@@ -1,8 +1,10 @@
 package ai.weixiu.service;
 
 import ai.weixiu.entity.CaseRecord;
+import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.dto.CaseRecordDTO;
 import ai.weixiu.pojo.vo.CaseDraftVO;
+import ai.weixiu.pojo.vo.CaseRecordVO;
 
 import java.util.List;
 import java.util.Optional;
@@ -24,6 +26,27 @@ public interface CaseRecordService {
      * @param dto 老师傅修改后的案例草稿 + 来源/锚定线索
      */
     void submit(CaseRecordDTO dto);
+
+    /**
+     * 待审案例分页（管理员审核列表）。
+     */
+    PageResult<CaseRecordVO> pending(int page, int size);
+
+    /**
+     * 审核通过：用 dto 覆盖管理员编辑后的字段 → 强制向量化（失败抛异常阻塞）
+     * → 尽力连边（case→Fault，非阻塞）→ status=approved。
+     */
+    void approve(String id, CaseRecordDTO dto);
+
+    /**
+     * 审核驳回：status=rejected，记录审核意见。
+     */
+    void reject(String id, String comment);
+
+    /**
+     * 我提交的案例分页（一线人员查看自己的沉淀）。
+     */
+    PageResult<CaseRecordVO> mine(int page, int size);
 
     /**
      * 新增案例记录
