@@ -284,38 +284,7 @@ class AiStreamEventUtilsTest {
             StringBuilder acc = new StringBuilder();
 
             Flux.fromIterable(rawLines)
-                    .map(AiStreamEventUtils::normalizeSsePayload)
-                    .filter(line -> !line.isEmpty())
-                    .flatMap(payload -> {
-                        try {
-                            JsonNode root = AiStreamEventUtils.parseEvent(payload, mapper);
-                            if (root == null) {
-                                return reactor.core.publisher.Flux.empty();
-                            }
-                            String event = root.path("event").asText("");
-                            return switch (event) {
-                                case "token" -> {
-                                    String content = root.path("data").path("content").asText("");
-                                    if (content.isEmpty()) {
-                                        yield reactor.core.publisher.Flux.empty();
-                                    }
-                                    yield reactor.core.publisher.Flux.just(
-                                            AiStreamEventUtils.toEventJson(root, mapper));
-                                }
-                                case "done" ->
-                                    reactor.core.publisher.Flux.just(
-                                            AiStreamEventUtils.ensureDoneHasEvidenceImages(root, mapper));
-                                case "error" ->
-                                    reactor.core.publisher.Flux.just(
-                                            AiStreamEventUtils.toEventJson(root, mapper));
-                                default ->
-                                    reactor.core.publisher.Flux.just(
-                                            AiStreamEventUtils.toEventJson(root, mapper));
-                            };
-                        } catch (Exception e) {
-                            return reactor.core.publisher.Flux.empty();
-                        }
-                    })
+                    .flatMap(line -> AiStreamEventUtils.toFrontendEvents(line, mapper))
                     .doOnNext(eventJson -> {
                         frontendEvents.add(eventJson);
                         // 只累计 token 内容

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import reactor.core.publisher.Flux;
 
 /**
  * AI 流式对话 SSE 事件解析工具类。
@@ -56,6 +57,31 @@ public final class AiStreamEventUtils {
         } catch (JsonProcessingException e) {
             return null;
         }
+    }
+
+    public static Flux<String> toFrontendEvents(String line, ObjectMapper mapper) {
+        String payload = normalizeSsePayload(line);
+        if (payload.isEmpty()) {
+            return Flux.empty();
+        }
+
+        JsonNode root = parseEvent(payload, mapper);
+        if (root == null) {
+            return Flux.empty();
+        }
+
+        if ("done".equals(root.path("event").asText(""))) {
+            return Flux.just(ensureDoneHasEvidenceImages(root, mapper));
+        }
+        return Flux.just(toEventJson(root, mapper))
+                .filter(eventJson -> !eventJson.isEmpty());
+    }
+
+    public static String errorEvent(String message, ObjectMapper mapper) {
+        ObjectNode root = mapper.createObjectNode();
+        root.put("event", "error");
+        root.putObject("data").put("message", message == null ? "" : message);
+        return root.toString();
     }
 
     /**

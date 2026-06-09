@@ -164,34 +164,9 @@ public class MaintenanceTaskController {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .map(AiStreamEventUtils::normalizeSsePayload)
-                .filter(line -> !line.isEmpty())
-                .flatMap(payload -> {
-                    try {
-                        JsonNode root = AiStreamEventUtils.parseEvent(payload, objectMapper);
-                        if (root == null) {
-                            return Flux.empty();
-                        }
-                        String event = root.path("event").asText("");
-                        return switch (event) {
-                            case "token" -> {
-                                String content = root.path("data").path("content").asText("");
-                                if (content.isEmpty()) {
-                                    yield Flux.empty();
-                                }
-                                yield Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
-                            }
-                            case "done" ->
-                                Flux.just(AiStreamEventUtils.ensureDoneHasEvidenceImages(root, objectMapper));
-                            case "error" ->
-                                Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
-                            default ->
-                                Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
-                        };
-                    } catch (Exception e) {
-                        return Flux.empty();
-                    }
-                })
+                .flatMap(line -> AiStreamEventUtils.toFrontendEvents(line, objectMapper))
+                .onErrorResume(e -> Flux.just(AiStreamEventUtils.errorEvent(
+                        "AI service stream failed, please try again later", objectMapper)))
                 .doOnNext(eventJson -> {
                     // 只累计 token 事件的纯文本 content，用于落库
                     try {

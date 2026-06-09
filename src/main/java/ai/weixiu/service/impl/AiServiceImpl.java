@@ -96,11 +96,9 @@ public class AiServiceImpl implements AiService {
                     // 只累计 token 事件的纯文本 content，不保存 JSON 事件协议
                     try {
                         JsonNode node = objectMapper.readTree(eventJson);
-                        if ("token".equals(node.path("event").asText())) {
-                            String content = node.path("data").path("content").asText("");
-                            if (!content.isEmpty()) {
-                                fullResponse.append(content);
-                            }
+                        String content = AiStreamEventUtils.tokenContent(node);
+                        if (!content.isEmpty()) {
+                            fullResponse.append(content);
                         }
                     } catch (Exception ignore) {
                         // 非 JSON 行忽略
@@ -287,43 +285,26 @@ public class AiServiceImpl implements AiService {
                 .bodyValue(aiChatRequest)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .map(AiStreamEventUtils::normalizeSsePayload)
-                .filter(line -> !line.isEmpty())
-                .flatMap(payload -> {
+                .flatMap(line -> AiStreamEventUtils.toFrontendEvents(line, objectMapper))
+                .doOnNext(eventJson -> {
                     try {
-                        JsonNode root = AiStreamEventUtils.parseEvent(payload, objectMapper);
-                        if (root == null) {
-                            return Flux.empty();
+                        JsonNode node = objectMapper.readTree(eventJson);
+                        if ("error".equals(node.path("event").asText())) {
+                            log.warn("Python stream returned error event: {}",
+                                    node.path("data").path("message").asText(""));
                         }
-                        String event = root.path("event").asText("");
-                        return switch (event) {
-                            case "token" -> {
-                                String content = root.path("data").path("content").asText("");
-                                if (content.isEmpty()) {
-                                    yield Flux.empty();
-                                }
-                                yield Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
-                            }
-                            case "done" ->
-                                Flux.just(AiStreamEventUtils.ensureDoneHasEvidenceImages(root, objectMapper));
-                            case "error" -> {
-                                String msg = root.path("data").path("message")
-                                        .asText("AI 服务暂时不可用，请稍后重试");
-                                log.warn("Python 流式对话返回错误事件: {}", msg);
-                                yield Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
-                            }
-                            default ->
-                                // 未知合法 JSON 事件：原样透传，避免误丢
-                                Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
-                        };
-                    } catch (Exception e) {
-                        log.debug("解析 SSE 行失败，跳过: {}", payload, e);
-                        return Flux.empty();
+                    } catch (Exception ignore) {
+                        // ignore malformed local event
                     }
                 })
-                // 兜底：整条流没有任何可展示内容时，下发 error 事件（JSON 格式与前端协议一致）
+                .onErrorResume(e -> {
+                    log.warn("AI stream request failed", e);
+                    return Flux.just(AiStreamEventUtils.errorEvent(
+                            "AI service stream failed, please try again later", objectMapper));
+                })
                 .switchIfEmpty(Flux.defer(() -> Flux.just(
-                        "{\"event\":\"error\",\"data\":{\"message\":\"AI 未返回任何内容，请稍后重试\"}}")));
+                        AiStreamEventUtils.errorEvent("AI returned no content, please try again later",
+                                objectMapper))));
     }
 
     private void saveAiReply(AiSession finalAiSession, Long userId, StringBuilder fullResponse) {
