@@ -20,7 +20,6 @@ import ai.weixiu.pojo.query.MaintenanceTaskQuery;
 import ai.weixiu.pojo.vo.MaintenanceTaskVO;
 import ai.weixiu.pojo.vo.StepSourceVO;
 import ai.weixiu.pojo.vo.TaskStepRecordVO;
-import ai.weixiu.service.GraphIngestService;
 import ai.weixiu.service.MaintenanceTaskService;
 import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MioIOUpLoadService;
@@ -59,7 +58,6 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     private final Neo4jClient neo4jClient;
     private final ManualDeviceMapper manualDeviceMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
-    private final GraphIngestService graphIngestService;
     private final MaintenanceManualMapper maintenanceManualMapper;
     private final MioIOUpLoadService mioIOUpLoadService;
     private final ObjectMapper objectMapper;
@@ -786,7 +784,6 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             md.setDeviceName(deviceName);
             md.setCreatedAt(now);
             manualDeviceMapper.insert(md);
-            graphIngestService.linkManualComponentsToDevice(md.getManualId(), deviceId);
             inserted++;
         }
 

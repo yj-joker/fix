@@ -17,7 +17,6 @@ import ai.weixiu.pojo.query.MaintenanceManualQuery;
 import ai.weixiu.pojo.vo.MaintenanceManualVO;
 import ai.weixiu.entity.Device;
 import ai.weixiu.service.DeviceService;
-import ai.weixiu.service.GraphIngestService;
 import ai.weixiu.service.KnowledgeDocumentService;
 import ai.weixiu.service.MaintenanceManualService;
 import ai.weixiu.service.MioIOUpLoadService;
@@ -61,7 +60,6 @@ public class MaintenanceManualServiceImpl
     private final ManualDeviceMapper manualDeviceMapper;
     private final ManualReadRecordMapper manualReadRecordMapper;
     private final DeviceService deviceService;
-    private final GraphIngestService graphIngestService;
 
     @Override
     @Transactional
@@ -88,13 +86,10 @@ public class MaintenanceManualServiceImpl
     }
 
     /**
-     * 全量同步手册-设备关联（manual_device），并尝试即时补图谱 OWNS 边。
+     * 全量同步手册-设备关联（manual_device）。
      *
      * <p>语义：传入的 deviceIds 即为该手册的最终适用设备集合——先清空旧关联再按列表重建，
-     * 设备名从 Neo4j Device 节点按 id 解析（找不到的 id 跳过）。每写入一条关联，立即调用
-     * {@code linkManualComponentsToDevice} 尝试把该手册已抽取的部件挂到设备上：
-     * 若部件尚未抽取完（上传即关联的常见情况），此处匹配 0 条不报错，待
-     * {@code GraphIngestService.ingestFromManual} 抽取入库末尾再统一补边。</p>
+     * 设备名从 Neo4j Device 节点按 id 解析（找不到的 id 跳过）。</p>
      *
      * @param deviceIds 适用设备 UUID 列表；空列表表示清空关联（通用手册）
      */
@@ -124,10 +119,7 @@ public class MaintenanceManualServiceImpl
             md.setDeviceName(device.getName());
             md.setCreatedAt(now);
             manualDeviceMapper.insert(md);
-
-            // 即时补边：部件已抽取则连上 Device-[:OWNS]->Component，未抽取则返回 0（安全）
-            int linked = graphIngestService.linkManualComponentsToDevice(manualId, deviceId);
-            log.info("[手册-设备] 关联 manualId={}, deviceId={}, 即时补边部件数={}", manualId, deviceId, linked);
+            log.info("[手册-设备] 关联 manualId={}, deviceId={}", manualId, deviceId);
         }
     }
 
