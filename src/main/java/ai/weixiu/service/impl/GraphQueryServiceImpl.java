@@ -2,11 +2,14 @@ package ai.weixiu.service.impl;
 
 import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.query.DiagnosisSearchQuery;
+import ai.weixiu.pojo.vo.CaseRecordVO;
 import ai.weixiu.pojo.vo.ComponentVO;
 import ai.weixiu.pojo.vo.DeviceVO;
 import ai.weixiu.pojo.vo.DiagnosisPathVO;
+import ai.weixiu.pojo.vo.DiagnosisSearchVO;
 import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.repository.DeviceRepository;
+import ai.weixiu.service.CaseRecordService;
 import ai.weixiu.service.ComponentService;
 import ai.weixiu.service.FaultService;
 import ai.weixiu.service.GraphQueryService;
@@ -41,9 +44,10 @@ public class GraphQueryServiceImpl implements GraphQueryService {
     private final FaultService faultService;
     private final ComponentService componentService;
     private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
+    private final CaseRecordService caseRecordService;
 
     @Override
-    public PageResult<DiagnosisPathVO> searchDiagnosisPaths(DiagnosisSearchQuery query) {
+    public DiagnosisSearchVO searchDiagnosisPaths(DiagnosisSearchQuery query) {
         int safePage = Math.max(query.getPage(), 0);
         int safeSize = Math.max(query.getSize(), 5);
         int skip = safePage * safeSize;
@@ -113,8 +117,20 @@ public class GraphQueryServiceImpl implements GraphQueryService {
         List<String> faultIds = faultScoreMap.isEmpty() ? null : new ArrayList<>(faultScoreMap.keySet());
         List<String> componentIds = compScoreMap.isEmpty() ? null : new ArrayList<>(compScoreMap.keySet());
 
+        // ===== 5.5 相关案例向量召回（approved，非阻塞）=====
+        // 即使图谱未命中，相关案例也可独立返回，保证沉淀的实战经验"永不悬空"。
+        List<CaseRecordVO> cases = Collections.emptyList();
+        if (hasFaultDesc) {
+            try {
+                cases = caseRecordService.getByEmbedding(query.getFaultDescription(), searchLimit, minScore);
+            } catch (Exception e) {
+                log.warn("案例向量召回失败（非阻塞）desc={}: {}", query.getFaultDescription(), e.getMessage());
+            }
+        }
+
         if (faultIds == null && componentIds == null) {
-            return emptyResult(safePage, safeSize);
+            // 图谱无命中，但相关案例可能存在，仍返回 cases
+            return pageResult(List.of(), 0L, safePage, safeSize, cases);
         }
 
         // ===== 6. OR Cypher + matchScore 排序（单次查询同时返回 records 和 total）=====
@@ -129,14 +145,15 @@ public class GraphQueryServiceImpl implements GraphQueryService {
             vo.setPathText(buildPathText(vo));
         }
 
-        log.info("诊断路径查询: 关键词={} 故障ID数={} 部件ID数={} 图片数={} 结果数={}",
+        log.info("诊断路径查询: 关键词={} 故障ID数={} 部件ID数={} 图片数={} 结果数={} 案例数={}",
                 query.getKeyword(),
                 faultIds != null ? faultIds.size() : 0,
                 componentIds != null ? componentIds.size() : 0,
                 hasImages ? query.getImageUrls().size() : 0,
-                records.size());
+                records.size(),
+                cases.size());
 
-        return pageResult(records, total, safePage, safeSize);
+        return pageResult(records, total, safePage, safeSize, cases);
     }
 
     // ===== 核心 Cypher：OR 匹配 + matchScore 评分（单次查询返回 records + total）=====
@@ -312,16 +329,18 @@ public class GraphQueryServiceImpl implements GraphQueryService {
         return sb.toString();
     }
 
-    private PageResult<DiagnosisPathVO> emptyResult(int page, int size) {
-        return pageResult(List.of(), 0L, page, size);
+    private DiagnosisSearchVO emptyResult(int page, int size) {
+        return pageResult(List.of(), 0L, page, size, Collections.emptyList());
     }
 
-    private PageResult<DiagnosisPathVO> pageResult(List<DiagnosisPathVO> records, Long total, int page, int size) {
-        PageResult<DiagnosisPathVO> result = new PageResult<>();
+    private DiagnosisSearchVO pageResult(List<DiagnosisPathVO> records, Long total, int page, int size,
+                                         List<CaseRecordVO> cases) {
+        DiagnosisSearchVO result = new DiagnosisSearchVO();
         result.setRecords(records);
         result.setTotal(total);
         result.setPage(page);
         result.setSize(size);
+        result.setCases(cases);
         return result;
     }
 

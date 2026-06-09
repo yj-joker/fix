@@ -49,6 +49,16 @@ public interface CaseRecordService {
     PageResult<CaseRecordVO> mine(int page, int size);
 
     /**
+     * 多模态向量召回 approved 案例（RAG 出口：并入 path/search）。
+     */
+    List<CaseRecordVO> getByEmbedding(String description, Long limit, Double minScore);
+
+    /**
+     * 某故障下的 approved 案例分页（前端图谱展开）。
+     */
+    PageResult<CaseRecordVO> getCasesByFault(String faultId, int page, int size);
+
+    /**
      * 新增案例记录
      */
     CaseRecord save(CaseRecordDTO caseRecordDTO);

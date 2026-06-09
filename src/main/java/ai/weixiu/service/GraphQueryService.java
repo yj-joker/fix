@@ -1,8 +1,7 @@
 package ai.weixiu.service;
 
-import ai.weixiu.pojo.PageResult;
 import ai.weixiu.pojo.query.DiagnosisSearchQuery;
-import ai.weixiu.pojo.vo.DiagnosisPathVO;
+import ai.weixiu.pojo.vo.DiagnosisSearchVO;
 
 public interface GraphQueryService {
 
@@ -13,7 +12,7 @@ public interface GraphQueryService {
      * componentDescription（部件向量）、imageUrls（图片向量）分别检索，
      * ID 层面合并去重后，通过 OR 匹配 + 多维度评分排序返回路径。
      */
-    PageResult<DiagnosisPathVO> searchDiagnosisPaths(DiagnosisSearchQuery query);
+    DiagnosisSearchVO searchDiagnosisPaths(DiagnosisSearchQuery query);
 
     /**
      * 验证故障名称是否存在于知识图谱中（模糊匹配）

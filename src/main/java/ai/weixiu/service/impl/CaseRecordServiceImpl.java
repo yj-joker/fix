@@ -335,6 +335,29 @@ public class CaseRecordServiceImpl implements CaseRecordService {
         return new PageResult<>(toVOList(list), total, p, size);
     }
 
+    @Override
+    public List<CaseRecordVO> getByEmbedding(String description, Long limit, Double minScore) {
+        if (!StringUtils.hasText(description)) {
+            return new ArrayList<>();
+        }
+        List<Double> vec = multimodalEmbeddingUtils.getMultimodalEmbedding(description, null);
+        if (vec == null || vec.isEmpty()) {
+            return new ArrayList<>();
+        }
+        long lim = limit == null ? 5L : limit;
+        double ms = minScore == null ? 0.0 : minScore;
+        return caseRecordRepository.getCasesByMultimodalEmbedding(vec, lim, ms);
+    }
+
+    @Override
+    public PageResult<CaseRecordVO> getCasesByFault(String faultId, int page, int size) {
+        int p = Math.max(page, 1);
+        long skip = (long) (p - 1) * size;
+        List<CaseRecordVO> records = caseRecordRepository.findApprovedByFault(faultId, skip, size);
+        long total = caseRecordRepository.countApprovedByFault(faultId);
+        return new PageResult<>(records, total, p, size);
+    }
+
     private List<CaseRecordVO> toVOList(List<CaseRecord> list) {
         List<CaseRecordVO> out = new ArrayList<>();
         if (list != null) {
