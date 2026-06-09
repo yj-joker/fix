@@ -545,6 +545,9 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             throw new IllegalArgumentException("设备名称不能为空");
         }
 
+        // 入图谱前守门：校验抽取实体是否像真实检修实体，挡垃圾节点入图（可降级）
+        validateGraphEntities(deviceName, graphData);
+
         // 1. 查找或创建 Device 节点
         String deviceNodeId = findOrCreateDevice(deviceName);
 
@@ -940,6 +943,52 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         } catch (Exception e) {
             log.warn("[任务校验] 校验服务不可用，放行(fail-open): {}", e.getMessage());
         }
+    }
+
+    /**
+     * 图谱沉淀守门：写 Neo4j 前校验待入图谱的抽取实体（设备/部件/故障/方案）是否像真实检修知识。
+     * <p>挡掉乱码/占位符实体污染图谱；调便宜快模型 {@code /ai/validate?purpose=graph}。
+     * 不过抛 {@link IllegalArgumentException}（理由透出前端）；校验服务不可用则 fail-open 放行。
+     * 受 {@code weixiu.task-validate.enabled / llm-enabled} 双开关控制。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private void validateGraphEntities(String deviceName, Map<String, Object> graphData) {
+        if (!validateEnabled || !validateLlmEnabled) return;
+        List<Map<String, Object>> comps = (List<Map<String, Object>>) graphData.getOrDefault("components", List.of());
+        List<Map<String, Object>> faults = (List<Map<String, Object>>) graphData.getOrDefault("faults", List.of());
+        List<Map<String, Object>> sols = (List<Map<String, Object>>) graphData.getOrDefault("solutions", List.of());
+        String text = "设备：" + deviceName + "\n"
+                + "部件：" + joinEntityNames(comps, "name") + "\n"
+                + "故障：" + joinEntityNames(faults, "name") + "\n"
+                + "解决方案：" + joinEntityNames(sols, "title");
+        try {
+            Map<String, Object> body = Map.of("text", text, "purpose", "graph");
+            String resp = webClient.post()
+                    .uri("/ai/validate")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            JsonNode node = objectMapper.readTree(resp);
+            if (!node.path("valid").asBoolean(true)) {
+                String reason = node.path("reason").asText("待沉淀的图谱实体无效或与设备检修无关");
+                throw new IllegalArgumentException(reason);
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("[图谱沉淀校验] 校验服务不可用，放行(fail-open): {}", e.getMessage());
+        }
+    }
+
+    private String joinEntityNames(List<Map<String, Object>> list, String key) {
+        if (list == null || list.isEmpty()) return "（无）";
+        String joined = list.stream()
+                .map(m -> m.get(key))
+                .filter(v -> v != null && !String.valueOf(v).isBlank())
+                .map(String::valueOf)
+                .collect(Collectors.joining("、"));
+        return joined.isBlank() ? "（无）" : joined;
     }
 
     private void sendGenerateMessage(MaintenanceTask task) {
