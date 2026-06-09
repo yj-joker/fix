@@ -18,6 +18,14 @@ public interface CaseRecordService {
     CaseDraftVO draftFromTask(Long taskId);
 
     /**
+     * 提交案例（合规闸门 → 落 pending 待审）。
+     * <p>合规 LLM 判定不通过时抛业务异常，拦截提交；通过则以 status=pending 落库（暂不向量化）。</p>
+     *
+     * @param dto 老师傅修改后的案例草稿 + 来源/锚定线索
+     */
+    void submit(CaseRecordDTO dto);
+
+    /**
      * 新增案例记录
      */
     CaseRecord save(CaseRecordDTO caseRecordDTO);

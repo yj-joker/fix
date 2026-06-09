@@ -11,6 +11,7 @@ import ai.weixiu.pojo.dto.CaseRecordDTO;
 import ai.weixiu.pojo.vo.CaseDraftVO;
 import ai.weixiu.repository.CaseRecordRepository;
 import ai.weixiu.service.CaseRecordService;
+import ai.weixiu.utils.BaseContext;
 import ai.weixiu.utils.BuildStringUtils;
 import ai.weixiu.utils.MultimodalEmbeddingUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -168,6 +170,67 @@ public class CaseRecordServiceImpl implements CaseRecordService {
         vo.setFaultName(task.getFaultDescription());
         vo.setImageUrls(task.getReportImages());
         return vo;
+    }
+
+    @Override
+    @Transactional
+    public void submit(CaseRecordDTO dto) {
+        // 1. 拼合规文本
+        String text = String.join("\n",
+                nz(dto.getTitle()), nz(dto.getSummary()), nz(dto.getDiagnosis()),
+                nz(dto.getResolution()), nz(dto.getExperienceSummary()));
+        // 2. 合规闸门
+        Map<String, Object> body = new HashMap<>();
+        body.put("text", text);
+        boolean compliant;
+        String reason;
+        try {
+            String resp = webClient.post()
+                    .uri("/ai/case/compliance")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            JsonNode node = objectMapper.readTree(resp);
+            compliant = node.hasNonNull("compliant") && node.get("compliant").asBoolean();
+            reason = jsonText(node, "reason");
+        } catch (Exception e) {
+            log.warn("[案例] 合规校验失败: {}", e.getMessage());
+            throw new TaskStateException("合规校验服务异常：" + e.getMessage());
+        }
+        // 3. 不通过则拦截提交（reason 给前端展示）
+        if (!compliant) {
+            throw new TaskStateException(StringUtils.hasText(reason) ? reason : "内容未通过合规审核，无法提交");
+        }
+        // 4. 落 pending（暂不向量化，向量化在 approve 时强制执行）
+        CaseRecord c = new CaseRecord();
+        c.setId(UUID.randomUUID().toString());
+        c.setTitle(dto.getTitle());
+        c.setSummary(dto.getSummary());
+        c.setDiagnosis(dto.getDiagnosis());
+        c.setResolution(dto.getResolution());
+        c.setResult(dto.getResult());
+        c.setExperienceSummary(dto.getExperienceSummary());
+        c.setTags(dto.getTags());
+        c.setDowntime(dto.getDowntime());
+        c.setCost(dto.getCost());
+        c.setImageUrls(dto.getImageUrls());
+        c.setStatus("pending");
+        c.setSourceType(StringUtils.hasText(dto.getSourceType()) ? dto.getSourceType() : "task");
+        c.setSourceTaskId(dto.getSourceTaskId());
+        c.setSourceFileUrl(dto.getSourceFileUrl());
+        c.setDeviceId(dto.getDeviceId());
+        c.setFaultName(dto.getFaultName());
+        c.setComplianceReason(reason);
+        c.setSubmittedById(BaseContext.getCurrentId());
+        c.setRecordedAt(LocalDateTime.now());
+        caseRecordRepository.save(c);
+        log.info("[案例] 提交待审 id={} sourceTaskId={} submittedBy={}",
+                c.getId(), c.getSourceTaskId(), c.getSubmittedById());
+    }
+
+    private static String nz(String s) {
+        return s == null ? "" : s;
     }
 
     /** 图片 URL 转 Base64（云端多模态需要），失败降级原始 URL，不阻断起草。 */
