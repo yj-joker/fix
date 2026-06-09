@@ -12,6 +12,7 @@ import ai.weixiu.entity.TaskChatMessage;
 import ai.weixiu.entity.User;
 import ai.weixiu.mapper.UserMapper;
 import ai.weixiu.service.MaintenanceTaskService;
+import ai.weixiu.utils.AiStreamEventUtils;
 import ai.weixiu.utils.BaseContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -163,11 +164,41 @@ public class MaintenanceTaskController {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .doOnNext(line -> {
+                .map(AiStreamEventUtils::normalizeSsePayload)
+                .filter(line -> !line.isEmpty())
+                .flatMap(payload -> {
                     try {
-                        JsonNode node = objectMapper.readTree(line);
-                        if ("token".equals(node.path("event").asText())) {
-                            acc.append(node.path("data").path("content").asText(""));
+                        JsonNode root = AiStreamEventUtils.parseEvent(payload, objectMapper);
+                        if (root == null) {
+                            return Flux.empty();
+                        }
+                        String event = root.path("event").asText("");
+                        return switch (event) {
+                            case "token" -> {
+                                String content = root.path("data").path("content").asText("");
+                                if (content.isEmpty()) {
+                                    yield Flux.empty();
+                                }
+                                yield Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
+                            }
+                            case "done" ->
+                                Flux.just(AiStreamEventUtils.ensureDoneHasEvidenceImages(root, objectMapper));
+                            case "error" ->
+                                Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
+                            default ->
+                                Flux.just(AiStreamEventUtils.toEventJson(root, objectMapper));
+                        };
+                    } catch (Exception e) {
+                        return Flux.empty();
+                    }
+                })
+                .doOnNext(eventJson -> {
+                    // 只累计 token 事件的纯文本 content，用于落库
+                    try {
+                        JsonNode node = objectMapper.readTree(eventJson);
+                        String content = AiStreamEventUtils.tokenContent(node);
+                        if (!content.isEmpty()) {
+                            acc.append(content);
                         }
                     } catch (Exception ignore) {
                         // 非 JSON 行忽略
