@@ -66,6 +66,39 @@ public class CaseRecord {
     @Property("multimodal_embedding")
     private List<Double> multimodalEmbedding;
 
+    @Property("status")//审核状态：pending/approved/rejected
+    private String status;
+
+    @Property("source_type")//来源类型：task/file/note_photo/voice
+    private String sourceType;
+
+    @Property("source_task_id")//来源检修任务ID（task 通道）
+    private Long sourceTaskId;
+
+    @Property("source_file_url")//来源文件URL（file/note_photo/voice 通道）
+    private String sourceFileUrl;
+
+    @Property("submitted_by_id")//提交人ID（一线人员）
+    private Long submittedById;
+
+    @Property("reviewed_by_id")//审核人ID（管理员）
+    private Long reviewedById;
+
+    @Property("reviewed_at")//审核时间
+    private LocalDateTime reviewedAt;
+
+    @Property("review_comment")//审核意见（驳回原因等）
+    private String reviewComment;
+
+    @Property("compliance_reason")//合规闸门判定说明
+    private String complianceReason;
+
+    @Property("device_id")//尽力锚定的设备ID（可空）
+    private String deviceId;
+
+    @Property("fault_name")//尽力匹配 Fault 用的故障名（可空）
+    private String faultName;
+
     //  关系 记录了哪些故障（多对多，案例 --> 故障）
     // 案例 --[RECORDED]--> 故障
     @Relationship(type = "RECORDED", direction = Relationship.Direction.OUTGOING)
