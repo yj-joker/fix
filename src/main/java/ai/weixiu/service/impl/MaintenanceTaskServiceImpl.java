@@ -29,7 +29,9 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.toolkit.Db;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +40,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -64,6 +67,12 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
     private final TaskChatMessageMapper chatMessageMapper;
     private final MemoryPreferenceService memoryPreferenceService;
     private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
+    private final WebClient webClient;
+
+    @Value("${weixiu.task-validate.enabled:true}")
+    private boolean validateEnabled;
+    @Value("${weixiu.task-validate.llm-enabled:true}")
+    private boolean validateLlmEnabled;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -75,6 +84,8 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         if (dto.getFaultDescription() == null || dto.getFaultDescription().isBlank()) {
             throw new IllegalArgumentException("故障描述不能为空");
         }
+        // 入口闸：挡掉乱码/无关垃圾任务，避免触发昂贵 AI 生成（不过抛 IllegalArgumentException→400）
+        validateTaskInput(dto.getFaultDescription());
 
         MaintenanceTask task = new MaintenanceTask();
         BeanUtils.copyProperties(dto, task);
@@ -890,6 +901,44 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         } catch (Exception e) {
             log.warn("[任务] 图片转Base64失败，降级为原始URL {}: {}", logCtx, e.getMessage());
             return urls;
+        }
+    }
+
+    /**
+     * 检修任务入口闸：轻量、宽松、可降级。
+     * <p>Layer1 规则（免费）挡空/过短/乱码；Layer2 便宜快模型（{@code /ai/validate}）挡与检修无关的垃圾。
+     * 校验不过抛 {@link IllegalArgumentException}（理由透出前端 400）；校验服务不可用则 fail-open 放行，
+     * 不让守门器宕机拖垮建任务。</p>
+     */
+    private void validateTaskInput(String faultDescription) {
+        if (!validateEnabled) return;
+        // Layer1 规则（免费）
+        String t = faultDescription == null ? "" : faultDescription.trim();
+        if (t.length() < 4) {
+            throw new IllegalArgumentException("故障描述太短，请具体描述故障现象");
+        }
+        if (t.chars().distinct().count() <= 2) {
+            throw new IllegalArgumentException("故障描述无效，请描述真实故障现象");
+        }
+        // Layer2 便宜快模型（可降级：调用失败则放行）
+        if (!validateLlmEnabled) return;
+        try {
+            Map<String, Object> body = Map.of("text", t, "purpose", "task");
+            String resp = webClient.post()
+                    .uri("/ai/validate")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            JsonNode node = objectMapper.readTree(resp);
+            if (!node.path("valid").asBoolean(true)) {
+                String reason = node.path("reason").asText("该故障描述无效或与设备检修无关");
+                throw new IllegalArgumentException(reason);
+            }
+        } catch (IllegalArgumentException e) {
+            throw e; // 校验不过，透出理由
+        } catch (Exception e) {
+            log.warn("[任务校验] 校验服务不可用，放行(fail-open): {}", e.getMessage());
         }
     }
 

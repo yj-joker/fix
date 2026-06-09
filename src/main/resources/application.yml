@@ -80,6 +80,10 @@ apikey: ${APIKEY}
 ai:
   python-service-url: http://localhost:8000
   internal-token: ${INTERNAL_TOKEN:fix-agent-internal-2026}
+weixiu:
+  task-validate:
+    enabled: true        # 入口校验总开关
+    llm-enabled: true    # Layer2 快模型层（可单独关，仅留规则层）
 baidu:
   speech:
     app-id: ${BAIDU_APP_ID}
