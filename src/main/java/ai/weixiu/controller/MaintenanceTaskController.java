@@ -164,7 +164,7 @@ public class MaintenanceTaskController {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .flatMap(line -> AiStreamEventUtils.toFrontendEvents(line, objectMapper))
+                .concatMap(line -> AiStreamEventUtils.toFrontendEvents(line, objectMapper))
                 .onErrorResume(e -> Flux.just(AiStreamEventUtils.errorEvent(
                         "AI service stream failed, please try again later", objectMapper)))
                 .doOnNext(eventJson -> {

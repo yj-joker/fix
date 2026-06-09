@@ -227,13 +227,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * */
     @Override
     public void updateUser(UserDTO userDTO) {
-        LambdaUpdateWrapper<User> wrapper = new LambdaUpdateWrapper<>();
-        wrapper.eq(User::getId, userDTO.getId())
-                .set(User::getName, userDTO.getName())
-                .set(User::getNumber, userDTO.getNumber())
-                .set(User::getPhone, userDTO.getPhone())
-                .set(User::getUpdateTime, LocalDateTime.now());
-        this.update(wrapper);
+       User user=this.getById(userDTO.getId());
+       if(user==null){
+           throw new NotFoundException("用户不存在");
+       }
+       user.setPhone(userDTO.getPhone());
+       if(userDTO.getName().isEmpty()){
+           user.setName(userDTO.getName());
+       }
+       user.setEmail(userDTO.getEmail());
+        this.updateById(user);
     }
 
     /*

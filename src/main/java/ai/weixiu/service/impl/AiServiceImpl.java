@@ -285,7 +285,7 @@ public class AiServiceImpl implements AiService {
                 .bodyValue(aiChatRequest)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .flatMap(line -> AiStreamEventUtils.toFrontendEvents(line, objectMapper))
+                .concatMap(line -> AiStreamEventUtils.toFrontendEvents(line, objectMapper))
                 .doOnNext(eventJson -> {
                     try {
                         JsonNode node = objectMapper.readTree(eventJson);

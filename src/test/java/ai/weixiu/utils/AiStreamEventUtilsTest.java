@@ -284,7 +284,7 @@ class AiStreamEventUtilsTest {
             StringBuilder acc = new StringBuilder();
 
             Flux.fromIterable(rawLines)
-                    .flatMap(line -> AiStreamEventUtils.toFrontendEvents(line, mapper))
+                    .concatMap(line -> AiStreamEventUtils.toFrontendEvents(line, mapper))
                     .doOnNext(eventJson -> {
                         frontendEvents.add(eventJson);
                         // 只累计 token 内容
@@ -301,6 +301,25 @@ class AiStreamEventUtilsTest {
                     .blockLast(); // 阻塞等待流完成（测试环境）
 
             return new TransformResult(frontendEvents, acc.toString());
+        }
+
+        @Test
+        @DisplayName("token A/B/C 转换和累计后仍保持 ABC 顺序")
+        void shouldPreserveTokenOrderForAssistantText() {
+            List<String> rawLines = List.of(
+                    "{\"event\":\"token\",\"data\":{\"content\":\"A\"}}",
+                    "{\"event\":\"token\",\"data\":{\"content\":\"B\"}}",
+                    "{\"event\":\"token\",\"data\":{\"content\":\"C\"}}",
+                    "{\"event\":\"done\",\"data\":{}}"
+            );
+
+            TransformResult result = transformSseStream(rawLines);
+
+            assertEquals("ABC", result.assistantText());
+            assertEquals(4, result.frontendEvents.size());
+            assertEquals("A", parse(result.frontendEvents.get(0)).path("data").path("content").asText());
+            assertEquals("B", parse(result.frontendEvents.get(1)).path("data").path("content").asText());
+            assertEquals("C", parse(result.frontendEvents.get(2)).path("data").path("content").asText());
         }
 
         @Test
