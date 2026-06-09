@@ -13,6 +13,16 @@
 
 ---
 
+## 执行方式(已选定：Subagent 驱动)
+
+用 **superpowers:subagent-driven-development**：每个 Task 派一个全新 subagent 独立实现，主控会话在任务之间做两阶段 review（代码正确性 + 是否贴合本计划/spec），通过后再放行下一个 Task。
+- 顺序：先 Python（Task 2 起草/合规端点）→ Java（Task 1、3、4、5、6）→ Task 7 检索接通 → Task 8 只读端点。Task 7 依赖 Task 1-6 已落地。
+- 每个 subagent 只拿到「单个 Task 的 Files/Steps + 必要的 spec 摘要」，不需要全局上下文。
+- Python 仓库的提交由用户手动管理（计划里 Python 步骤不写 git 提交命令）。
+- 跨端验收（Task 7 Step4「提问能召回案例」）由主控会话在 Java+Python 都重启后统一跑。
+
+---
+
 ## 文件结构(期1)
 
 **Python(FixAgent)**
