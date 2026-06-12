@@ -147,6 +147,10 @@ public class MultimodalEmbeddingUtils {
         List<String> base64List = new ArrayList<>();
         for (String url : imageUrls) {
             try {
+                if (isImageDataUri(url)) {
+                    base64List.add(url);
+                    continue;
+                }
                 URI uri = URI.create(url);
                 String path = uri.getPath();
                 if (path == null || path.length() <= 1) {
@@ -210,7 +214,9 @@ public class MultimodalEmbeddingUtils {
         int minioPort = minioEndpointUri.getPort();
         return minioHost.equalsIgnoreCase(imgHost) && minioPort == imgPort;
     }
-
+    private static boolean isImageDataUri(String value) {
+        return value != null && value.startsWith("data:image/") && value.contains(";base64,");
+    }
     private static String guessContentType(String objectName) {
         String lower = objectName.toLowerCase();
         if (lower.endsWith(".png")) return "image/png";
