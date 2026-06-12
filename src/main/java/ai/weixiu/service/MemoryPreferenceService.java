@@ -1,19 +1,19 @@
 package ai.weixiu.service;
 
 import ai.weixiu.entity.MemoryPreference;
-import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.util.List;
 
 /**
- * <p>
- * 用户偏好记忆 服务类
- * </p>
+ * 用户偏好读取服务。
+ *
+ * <p>偏好已并入 {@code memory_fact}(type='user')，本服务不再绑定独立表，
+ * 仅提供从 memory_fact 读取并映射为 {@link MemoryPreference} DTO 的能力。</p>
  *
  * @author author
  * @since 2026-05-12
  */
-public interface MemoryPreferenceService extends IService<MemoryPreference> {
+public interface MemoryPreferenceService {
 
     List<MemoryPreference> getPreference(Long sessionId, Long userId);
 

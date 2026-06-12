@@ -107,15 +107,10 @@ public class AiServiceImpl implements AiService {
                 .doOnComplete(() -> {
                     saveAiReply(finalAiSession, userId, fullResponse);
 
-                    // ===== 实时记忆更新：发MQ消息，Python异步消费 =====
-                    memoryMessageProducer.sendRealtimeUpdate(
-                            finalAiSession.getId(),
-                            userId,
-                            aiChatRequest.getUserMessage(),
-                            fullResponse.toString(),
-                            finalAiSession.getRoundCount(),
-                            recentFactContents
-                    );
+                    // [已退役] 实时记忆更新链路停用。
+                    // 事实纠正现由对话内 LLM 的 delete_memory(删错的)+save_memory(存对的)直接处理，
+                    // 语义判断比旧的轻量检测 Agent 准；旧链路去向量后 superseded 恒空，只会写入纠正事实
+                    // 却不替代旧事实，反而产生矛盾数据，故整条退役。
 
                     // ===== 定时整合：每maxMemory轮发MQ消息 =====
                     if (finalAiSession.getRoundCount() % maxMemory == 0) {
@@ -254,6 +249,10 @@ public class AiServiceImpl implements AiService {
         }
         if (recallCtx.getUserProfile() != null && !recallCtx.getUserProfile().isEmpty()) {
             contextMap.put("user_profile", recallCtx.getUserProfile());
+        }
+        // 文件式索引注入（仅 index 模式下非空；vector 模式为 null，不影响原有注入）
+        if (recallCtx.getMemoryIndex() != null && !recallCtx.getMemoryIndex().isBlank()) {
+            contextMap.put("memory_index", recallCtx.getMemoryIndex());
         }
         contextMap.put("user_id", userId);
         aiChatRequest.setContext(contextMap);

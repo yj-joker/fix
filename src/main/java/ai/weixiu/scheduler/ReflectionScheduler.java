@@ -42,6 +42,7 @@ public class ReflectionScheduler {
             // 找出所有有 active 事实的不同用户
             LambdaQueryWrapper<MemoryFact> factQuery = new LambdaQueryWrapper<>();
             factQuery.eq(MemoryFact::getStatus, "active")
+                    .ne(MemoryFact::getType, "user")   // 偏好不计入画像触发
                     .isNotNull(MemoryFact::getUserId)
                     .select(MemoryFact::getUserId);
             List<MemoryFact> facts = memoryFactService.list(factQuery);
@@ -57,7 +58,8 @@ public class ReflectionScheduler {
                 // 统计该用户 active 事实总数
                 LambdaQueryWrapper<MemoryFact> countQuery = new LambdaQueryWrapper<>();
                 countQuery.eq(MemoryFact::getUserId, userId)
-                        .eq(MemoryFact::getStatus, "active");
+                        .eq(MemoryFact::getStatus, "active")
+                        .ne(MemoryFact::getType, "user");   // 偏好不计入 ≥10 阈值
                 long factCount = memoryFactService.count(countQuery);
 
                 if (factCount < MIN_FACTS_FOR_REFLECTION) {

@@ -15,16 +15,16 @@ import ai.weixiu.service.MemoryFactService;
 import ai.weixiu.service.MemoryPreferenceService;
 import ai.weixiu.service.MemoryRecallService;
 import ai.weixiu.service.MemoryReflectionService;
+import ai.weixiu.service.MemoryStore;
 import ai.weixiu.service.MemoryUnresolvedService;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
  * 统一入口、统一出口，并在每次召回后异步记录 trace。</p>
  */
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 @Slf4j
 public class MemoryRecallServiceImpl implements MemoryRecallService {
 
@@ -50,9 +50,9 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
     private final MemoryPreferenceService memoryPreferenceService;
     private final MemoryReflectionService memoryReflectionService;
     private final MemoryUnresolvedService memoryUnresolvedService;
-    private final WebClient webClient;
     private final RedisTemplate<String, Object> redisTemplate;
     private final MemoryRecallTraceMapper recallTraceMapper;
+    private final MemoryStore memoryStore;
 
     @Override
     public RecallContext recall(Long sessionId, Long userId, String userMessage, Integer roundNo,
@@ -64,25 +64,25 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
         AiSession session = aiSessionService.getById(sessionId);
         ctx.setPreviousSummary(session != null ? session.getSummary() : null);
 
-        // ========== 2. 三个独立查询并行执行 ==========
+        // ========== 2. 事实召回：文件式索引注入（已彻底去向量）==========
+        // 事实改由「索引常驻 + LLM 按需 read_memory 懒加载」承载，注入记忆目录；
+        // relevantFacts 不再走向量召回，恒为空。偏好/未决/画像仍并行查询。
         long factStart = System.currentTimeMillis();
-        CompletableFuture<List<JSONObject>> factsFuture =
-                CompletableFuture.supplyAsync(() -> searchRelevantFacts(
-                        userMessage, userId, deviceType, equipmentId, siteId, taskId));
+        ctx.setMemoryIndex(memoryStore.loadIndex(userId));
+        List<JSONObject> relevantFacts = new ArrayList<>();
 
         long prefStart = System.currentTimeMillis();
         CompletableFuture<List<MemoryPreference>> preferencesFuture =
                 CompletableFuture.supplyAsync(() -> loadPreferences(sessionId, userId));
 
         CompletableFuture<List<MemoryUnresolved>> unresolvedFuture =
-                CompletableFuture.supplyAsync(() -> memoryUnresolvedService.getUnresolved(sessionId));
+                CompletableFuture.supplyAsync(() -> memoryUnresolvedService.getUnresolvedByUser(userId));
 
         CompletableFuture<List<MemoryReflection>> reflectionsFuture =
                 CompletableFuture.supplyAsync(() -> memoryReflectionService.getActiveReflections(userId));
 
-        CompletableFuture.allOf(factsFuture, preferencesFuture, unresolvedFuture, reflectionsFuture).join();
+        CompletableFuture.allOf(preferencesFuture, unresolvedFuture, reflectionsFuture).join();
 
-        List<JSONObject> relevantFacts = factsFuture.join();
         long factEnd = System.currentTimeMillis();
 
         List<MemoryPreference> preferences = preferencesFuture.join();
@@ -142,95 +142,11 @@ public class MemoryRecallServiceImpl implements MemoryRecallService {
     // ==================== 从 AiServiceImpl 迁移的私有方法 ====================
 
     /**
-     * 调用 Python 向量检索接口，查找与用户消息最相关的历史事实。
-     * 支持传递业务上下文参数（deviceType/equipmentId/siteId/taskId），
-     * 让 FactReranker 的 business_match 因子优先返回与当前业务相关的记忆。
+     * 加载偏好。偏好已并入 memory_fact(type=user)，由 LLM 工具精确增删；
+     * 每轮读最新、不再缓存，避免 LLM 直写后缓存脏读。
      */
-    private List<JSONObject> searchRelevantFacts(String userMessage, Long userId,
-                                                  String deviceType, String equipmentId,
-                                                  String siteId, String taskId) {
-        try {
-            LambdaQueryWrapper<AiSession> sessionQuery = new LambdaQueryWrapper<>();
-            sessionQuery.eq(AiSession::getUserId, userId).select(AiSession::getId);
-            List<String> userSessionIds = aiSessionService.list(sessionQuery)
-                    .stream().map(s -> s.getId().toString()).toList();
-
-            String response = webClient.post()
-                    .uri(uriBuilder -> {
-                        uriBuilder.path("/ai/memory/search_facts")
-                                .queryParam("query", userMessage)
-                                .queryParam("top_k", 5)
-                                .queryParam("session_ids", String.join(",", userSessionIds));
-                        if (deviceType != null && !deviceType.isEmpty()) {
-                            uriBuilder.queryParam("device_type", deviceType);
-                        }
-                        if (equipmentId != null && !equipmentId.isEmpty()) {
-                            uriBuilder.queryParam("equipment_id", equipmentId);
-                        }
-                        if (siteId != null && !siteId.isEmpty()) {
-                            uriBuilder.queryParam("site_id", siteId);
-                        }
-                        if (taskId != null && !taskId.isEmpty()) {
-                            uriBuilder.queryParam("task_id", taskId);
-                        }
-                        return uriBuilder.build();
-                    })
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            if (response != null) {
-                JSONObject result = JSONUtil.parseObj(response);
-                cn.hutool.json.JSONArray facts = result.getJSONArray("facts");
-                if (facts != null && !facts.isEmpty()) {
-                    List<JSONObject> factList = new ArrayList<>();
-                    for (int i = 0; i < facts.size(); i++) {
-                        factList.add(facts.getJSONObject(i));
-                    }
-                    log.info("向量检索到{}条相关事实", factList.size());
-                    return factList;
-                }
-            }
-        } catch (Exception e) {
-            log.warn("事实记忆向量检索失败，降级运行: {}", e.getMessage());
-        }
-        return new ArrayList<>();
-    }
-
-    /**
-     * 加载偏好（双级缓存：用户级 + 会话级分开缓存）。
-     */
-    @SuppressWarnings("unchecked")
     private List<MemoryPreference> loadPreferences(Long sessionId, Long userId) {
-        String userCacheKey = RedisKey.PREFERENCE_CACHE_USER + userId;
-        String sessionCacheKey = RedisKey.PREFERENCE_CACHE_SESSION + userId + ":" + sessionId;
-
-        List<MemoryPreference> cachedUser = (List<MemoryPreference>) redisTemplate.opsForValue().get(userCacheKey);
-        List<MemoryPreference> cachedSession = (List<MemoryPreference>) redisTemplate.opsForValue().get(sessionCacheKey);
-
-        if (cachedUser != null && cachedSession != null) {
-            List<MemoryPreference> result = new ArrayList<>(cachedUser);
-            result.addAll(cachedSession);
-            return result;
-        }
-
-        List<MemoryPreference> allPreferences = memoryPreferenceService.getPreference(sessionId, userId);
-
-        List<MemoryPreference> userPrefs = new ArrayList<>();
-        List<MemoryPreference> sessionPrefs = new ArrayList<>();
-        for (MemoryPreference pref : allPreferences) {
-            if (pref.getPreferenceCategory() != null
-                    && pref.getPreferenceCategory() == PreferenceCategoryEnum.USER_PREFERENCE.getCategory()) {
-                userPrefs.add(pref);
-            } else {
-                sessionPrefs.add(pref);
-            }
-        }
-
-        redisTemplate.opsForValue().set(userCacheKey, userPrefs, 5, TimeUnit.HOURS);
-        redisTemplate.opsForValue().set(sessionCacheKey, sessionPrefs, 5, TimeUnit.HOURS);
-
-        return allPreferences;
+        return memoryPreferenceService.getPreference(sessionId, userId);
     }
 
     /**

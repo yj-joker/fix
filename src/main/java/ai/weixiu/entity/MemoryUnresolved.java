@@ -1,19 +1,16 @@
 package ai.weixiu.entity;
 
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import java.time.LocalDateTime;
 import java.io.Serializable;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
 
 /**
- * <p>
- * 未完成事项记忆
- * </p>
+ * 未完成事项（DTO）。
+ *
+ * <p><b>已并入文件式记忆协议</b>：未决不再有独立的 memory_unresolved 表，统一存于
+ * {@code memory_fact} 的 {@code type='unresolved'} 用户级记忆。本类仅作为读出后回传
+ * 给调用方的兼容数据载体，不再映射任何数据库表。</p>
  *
  * @author author
  * @since 2026-05-12
@@ -21,45 +18,22 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
-@TableName("memory_unresolved")
 public class MemoryUnresolved implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    /**
-     * 会话ID
-     */
-    @TableField("session_id")
-    private String sessionId;
-
-    /**
-     * 待解决描述
-     */
-    @TableField("content")
+    /** 待解决描述 */
     private String content;
 
-    /**
-     * 未答复问题|进行中任务|用户待办
-     */
-    @TableField("type")
+    /** 未答复问题|进行中任务|用户待办 */
     private String type;
 
-    /**
-     * 第几次压缩产生的
-     */
-    @TableField("consolidation_seq")
-    private Integer consolidationSeq;
-    /*
-    * 是否被用户放弃
-    * */
-    @TableField("status")
+    /** 状态: active=进行中 */
     private String status;
 
-    @TableField("created_at")
-    private LocalDateTime createdAt;
-
+    /** 记忆名(对应 memory_fact.name)，供整合按 name 去重/关闭 */
+    private String name;
 
 }

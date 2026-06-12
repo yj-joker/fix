@@ -126,4 +126,24 @@ public class MemoryFact implements Serializable {
     @TableField("task_id")
     private Long taskId;
 
+    /** 记忆名称 —— 单条记忆标识（可读），(user_id, name) 唯一 */
+    @TableField("name")
+    private String name;
+
+    /** 记忆简述 */
+    @TableField("description")
+    private String description;
+
+    /** 记忆类型，默认 'project' */
+    @TableField("type")
+    private String type;
+
+    /** 该记忆为什么重要/产生背景 */
+    @TableField("why")
+    private String why;
+
+    /** 该记忆如何应用 */
+    @TableField("how_to_apply")
+    private String howToApply;
+
 }

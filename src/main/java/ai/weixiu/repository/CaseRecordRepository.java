@@ -30,6 +30,13 @@ public interface CaseRecordRepository extends Neo4jRepository<CaseRecord, String
     long countBySubmittedBy(@Param("uid") Long uid);
 
     /**
+     * 某用户已审核通过(approved)的案例履历，按记录时间倒序，供用户画像生成使用。
+     */
+    @Query("MATCH (c:CaseRecord) WHERE c.submitted_by_id = $uid AND c.status = 'approved' " +
+            "RETURN c ORDER BY c.recorded_at DESC LIMIT $limit")
+    List<CaseRecord> findApprovedBySubmittedBy(@Param("uid") Long uid, @Param("limit") int limit);
+
+    /**
      * 多模态向量召回 approved 案例（RAG 出口用）。
      */
     @Query("""

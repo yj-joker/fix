@@ -31,4 +31,12 @@ public class MemoryIntegrationParametersVO {
     private String previousSummary;
     /** 待整合消息的ID列表（整合完成后标记为已整合） */
     private List<Long> messageIds;
+    /**
+     * 该用户现有的事实索引（name + type + description 列表，不含 type=user 偏好）。
+     *
+     * 去向量后整合 LLM 看不到已有事实，导致重复抽取、冲突不 supersede。
+     * 注入此索引让 LLM 复用已有 name（→ Java 按 name upsert 命中、就地更新）
+     * 或在 supersededIds 中标记要替换的旧事实，实现真正的去重。
+     */
+    private String existingFactIndex;
 }

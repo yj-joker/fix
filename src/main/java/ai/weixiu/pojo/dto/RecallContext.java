@@ -33,6 +33,9 @@ public class RecallContext {
     /** 用户画像（反思 Agent 生成的高层归纳） */
     private List<Map<String, String>> userProfile;
 
+    /** 文件式索引目录文本（loadIndex 结果，仅 index 模式下使用） */
+    private String memoryIndex;
+
     // ===== 派生数据（供 MQ 传递） =====
 
     /** 已召回事实的内容列表（供实时记忆更新使用） */

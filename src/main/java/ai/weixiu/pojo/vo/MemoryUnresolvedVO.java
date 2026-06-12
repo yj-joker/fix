@@ -10,8 +10,10 @@ import lombok.Data;
  */
 @Data
 public class MemoryUnresolvedVO {
-    /** 数据库主键ID —— Python端LLM通过此ID标记已解决的事项 */
+    /** 数据库主键ID（兼容保留） */
     private Long id;
+    /** 记忆名 name —— 未决并入 memory_fact 后，整合 LLM 用它按 name 去重/标记已解决 */
+    private String name;
     /** 未完成任务摘要描述 */
     private String content;
     /** 类型：未答复回答|进行中任务|用户代办 */

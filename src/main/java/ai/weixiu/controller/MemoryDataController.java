@@ -2,6 +2,7 @@ package ai.weixiu.controller;
 
 import ai.weixiu.entity.*;
 import ai.weixiu.mapper.MemoryRecallTraceMapper;
+import ai.weixiu.repository.CaseRecordRepository;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.vo.MemoryIntegrationParametersVO;
 import ai.weixiu.pojo.vo.MemoryPreferenceVO;
@@ -11,6 +12,7 @@ import ai.weixiu.service.AiMessageService;
 import ai.weixiu.service.AiSessionService;
 import ai.weixiu.service.MemoryFactService;
 import ai.weixiu.service.MemoryPreferenceService;
+import ai.weixiu.service.MemoryStore;
 import ai.weixiu.service.MemoryUnresolvedService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,6 +43,8 @@ public class MemoryDataController {
     private final MemoryPreferenceService memoryPreferenceService;
     private final MemoryUnresolvedService memoryUnresolvedService;
     private final MemoryRecallTraceMapper recallTraceMapper;
+    private final MemoryStore memoryStore;
+    private final CaseRecordRepository caseRecordRepository;
 
     @GetMapping("/recall-trace")
     @Operation(summary = "查询记忆召回trace（调试用）")
@@ -66,6 +70,8 @@ public class MemoryDataController {
         LambdaQueryWrapper<MemoryFact> query = new LambdaQueryWrapper<>();
         query.eq(MemoryFact::getUserId, userId)
              .eq(MemoryFact::getStatus, "active")
+             // 偏好(user)/待办(unresolved)不参与画像归纳：前者本就含 work_style 维度、后者是临时待办
+             .notIn(MemoryFact::getType, "user", "unresolved")
              .orderByDesc(MemoryFact::getCreatedAt);
         List<MemoryFact> facts = memoryFactService.list(query);
 
@@ -76,6 +82,28 @@ public class MemoryDataController {
             item.put("keywords", f.getKeywords());
             item.put("device_type", f.getDeviceType());
             item.put("importance", f.getImportance());
+            result.add(item);
+        }
+        return Result.success(result);
+    }
+
+    @GetMapping("/user-task-history")
+    @Operation(summary = "获取用户已审核通过的检修案例履历（供Python画像Agent作主证据）")
+    public Result<List<Map<String, Object>>> getUserTaskHistory(
+            @RequestParam Long userId,
+            @RequestParam(defaultValue = "50") Integer limit) {
+        List<CaseRecord> cases = caseRecordRepository.findApprovedBySubmittedBy(userId, limit);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (CaseRecord c : cases) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("device_id", c.getDeviceId());
+            item.put("fault_name", c.getFaultName());
+            item.put("result", c.getResult());            // 成功/部分成功/失败
+            item.put("diagnosis", c.getDiagnosis());
+            item.put("resolution", c.getResolution());
+            item.put("experience_summary", c.getExperienceSummary());
+            item.put("downtime", c.getDowntime());
+            item.put("tags", c.getTags());
             result.add(item);
         }
         return Result.success(result);
@@ -128,11 +156,12 @@ public class MemoryDataController {
             prefVOs.add(vo);
         }
 
-        List<MemoryUnresolved> unresolved = memoryUnresolvedService.getUnresolved(sessionId);
+        // 用户级未决（memory_fact type=unresolved），带 name 供整合 LLM 按 name 去重/标记已解决
+        List<MemoryUnresolved> unresolved = memoryUnresolvedService.getUnresolvedByUser(userId);
         List<MemoryUnresolvedVO> unresolvedVOs = new ArrayList<>();
         for (MemoryUnresolved item : unresolved) {
             MemoryUnresolvedVO vo = new MemoryUnresolvedVO();
-            vo.setId(item.getId());
+            vo.setName(item.getName());
             vo.setContent(item.getContent());
             vo.setType(item.getType());
             vo.setStatus(item.getStatus());
@@ -151,6 +180,8 @@ public class MemoryDataController {
         params.setMemoryUnresolvedVOList(unresolvedVOs);
         params.setPreviousSummary(previousSummary);
         params.setMessageIds(messageIds);
+        // 注入现有事实索引（不含 type=user 偏好），供整合 LLM 复用 name / 标记 superseded 去重
+        params.setExistingFactIndex(memoryStore.loadIndex(userId));
 
         return Result.success(params);
     }

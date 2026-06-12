@@ -3,7 +3,6 @@ package ai.weixiu.mq;
 import ai.weixiu.common.RedisKey;
 import ai.weixiu.config.RabbitMQConfig;
 import ai.weixiu.entity.*;
-import ai.weixiu.enumerate.PreferenceCategoryEnum;
 import ai.weixiu.entity.MemoryIdempotent;
 import ai.weixiu.entity.MemoryReflection;
 import ai.weixiu.mapper.MemoryIdempotentMapper;
@@ -40,8 +39,6 @@ import java.util.stream.Collectors;
 public class MemoryResultListener {
 
     private final MemoryFactService memoryFactService;
-    private final MemoryPreferenceService memoryPreferenceService;
-    private final MemoryUnresolvedService memoryUnresolvedService;
     private final MemoryReflectionService memoryReflectionService;
     private final AiSessionService aiSessionService;
     private final AiMessageService aiMessageService;
@@ -80,11 +77,7 @@ public class MemoryResultListener {
                 return;
             }
 
-            if ("realtime_update".equals(type)) {
-                Number currentRoundNum = (Number) msg.get("currentRound");
-                Integer currentRound = currentRoundNum != null ? currentRoundNum.intValue() : null;
-                processRealtimeResult(data, sessionId, userId, currentRound);
-            } else if ("consolidation".equals(type)) {
+            if ("consolidation".equals(type)) {
                 processConsolidationResult(data, sessionId, userId);
             } else if ("reflection".equals(type)) {
                 processReflectionResult(data, userId);
@@ -99,135 +92,20 @@ public class MemoryResultListener {
         }
     }
 
-    private void processRealtimeResult(Map<String, Object> data, String sessionId, Long userId, Integer currentRound) {
-        boolean hasUpdate = Boolean.TRUE.equals(data.get("has_update"));
-        if (!hasUpdate) {
-            log.debug("[MQ结果] 实时更新无变更, 会话ID:{}", sessionId);
-            return;
-        }
-
-        JSONObject result = JSONUtil.parseObj(data);
-
-        // 标记旧事实为superseded
-        JSONArray supersededFactIds = result.getJSONArray("superseded_fact_ids");
-        if (supersededFactIds != null && !supersededFactIds.isEmpty()) {
-            List<String> factIds = new ArrayList<>();
-            for (int i = 0; i < supersededFactIds.size(); i++) {
-                factIds.add(supersededFactIds.getStr(i));
-            }
-            LambdaUpdateWrapper<MemoryFact> factWrapper = new LambdaUpdateWrapper<>();
-            factWrapper.in(MemoryFact::getFactId, factIds)
-                    .set(MemoryFact::getStatus, "superseded")
-                    .set(MemoryFact::getSupersededAt, LocalDateTime.now());
-            memoryFactService.update(factWrapper);
-            log.info("[MQ结果] 标记旧事实为已替代, 数量:{}", factIds.size());
-        }
-
-        // 保存纠正事实（合并旧事实的sourceSeqRange + 当前纠正轮次）
-        JSONArray factCorrections = result.getJSONArray("fact_corrections");
-        JSONArray newFactIds = result.getJSONArray("new_fact_ids");
-        JSONArray oldSeqRanges = result.getJSONArray("old_seq_ranges");
-        if (factCorrections != null && !factCorrections.isEmpty()) {
-            List<MemoryFact> newFacts = new ArrayList<>();
-            for (int i = 0; i < factCorrections.size(); i++) {
-                JSONObject correction = factCorrections.getJSONObject(i);
-                MemoryFact memoryFact = new MemoryFact();
-                memoryFact.setSessionId(sessionId);
-                memoryFact.setUserId(userId);
-                String vectorDocId = (newFactIds != null && i < newFactIds.size()) ? newFactIds.getStr(i) : null;
-                memoryFact.setFactId((vectorDocId != null && !vectorDocId.isEmpty()) ? vectorDocId : UUID.randomUUID().toString());
-                memoryFact.setContent(correction.getStr("correct_content"));
-                memoryFact.setKeywords(correction.getStr("keywords"));
-                memoryFact.setStatus("active");
-                memoryFact.setImportance(7); // 纠正事实默认较高重要度
-                memoryFact.setConfidence(0.95); // 用户主动纠正，置信度高
-                memoryFact.setUsageCount(0);
-
-                // 合并 sourceSeqRange：旧事实的范围 + 当前纠正轮次
-                String oldRange = (oldSeqRanges != null && i < oldSeqRanges.size()) ? oldSeqRanges.getStr(i) : "";
-                memoryFact.setSourceSeqRange(mergeSeqRange(oldRange, currentRound));
-
-                newFacts.add(memoryFact);
-            }
-            memoryFactService.saveBatch(newFacts);
-            log.info("[MQ结果] 保存纠正事实, 数量:{}", newFacts.size());
-        }
-
-        // 处理偏好变更
-        JSONArray preferenceChanges = result.getJSONArray("preference_changes");
-        if (preferenceChanges != null && !preferenceChanges.isEmpty()) {
-            boolean cacheInvalidated = false;
-            for (int i = 0; i < preferenceChanges.size(); i++) {
-                JSONObject prefChange = preferenceChanges.getJSONObject(i);
-                String action = prefChange.getStr("action", "upsert");
-                String content = prefChange.getStr("content");
-                String category = prefChange.getStr("category", "其他");
-                Integer preferenceCategory = prefChange.getInt("preferenceCategory", 0);
-
-                if ("delete".equals(action)) {
-                    LambdaQueryWrapper<MemoryPreference> deleteQuery = new LambdaQueryWrapper<>();
-                    deleteQuery.eq(MemoryPreference::getUserId, userId)
-                            .like(MemoryPreference::getContent, content);
-                    if (preferenceCategory == PreferenceCategoryEnum.SESSION_PREFERENCE.getCategory()) {
-                        deleteQuery.eq(MemoryPreference::getSessionId, sessionId);
-                    }
-                    List<MemoryPreference> toDelete = memoryPreferenceService.list(deleteQuery);
-                    if (!toDelete.isEmpty()) {
-                        List<Long> deleteIds = toDelete.stream().map(MemoryPreference::getId).collect(Collectors.toList());
-                        memoryPreferenceService.removeByIds(deleteIds);
-                        log.info("[MQ结果] 删除偏好, 数量:{}", deleteIds.size());
-                        cacheInvalidated = true;
-                    }
-                } else {
-                    LambdaQueryWrapper<MemoryPreference> existQuery = new LambdaQueryWrapper<>();
-                    existQuery.eq(MemoryPreference::getUserId, userId)
-                            .eq(MemoryPreference::getCategory, category)
-                            .eq(MemoryPreference::getPreferenceCategory, preferenceCategory);
-                    if (preferenceCategory == PreferenceCategoryEnum.SESSION_PREFERENCE.getCategory()) {
-                        existQuery.eq(MemoryPreference::getSessionId, sessionId);
-                    }
-                    MemoryPreference existing = memoryPreferenceService.getOne(existQuery, false);
-                    if (existing != null) {
-                        existing.setContent(content);
-                        memoryPreferenceService.updateById(existing);
-                    } else {
-                        MemoryPreference newPref = new MemoryPreference();
-                        newPref.setSessionId(sessionId);
-                        newPref.setUserId(userId);
-                        newPref.setContent(content);
-                        newPref.setCategory(category);
-                        newPref.setPreferenceCategory(preferenceCategory);
-                        newPref.setConsolidationSeq(0);
-                        memoryPreferenceService.save(newPref);
-                    }
-                    cacheInvalidated = true;
-                }
-            }
-            if (cacheInvalidated) {
-                // 清除用户级偏好缓存（所有会话共享）
-                redisTemplate.delete(RedisKey.PREFERENCE_CACHE_USER + userId);
-                // 清除当前会话级偏好缓存
-                redisTemplate.delete(RedisKey.PREFERENCE_CACHE_SESSION + userId + ":" + sessionId);
-                // 偏好变更后清除个性化推荐缓存，下次访问时重新计算
-                if (userId != null) {
-                    manualRecommendService.invalidateCache(userId);
-                }
-            }
-        }
-
-        log.info("[MQ结果] 实时记忆更新完成, 会话ID:{}", sessionId);
-    }
+    // [已退役] processRealtimeResult 整体删除：实时记忆更新链路停用，
+    // 事实纠正改由对话内 delete_memory/save_memory 处理（见 AiServiceImpl doOnComplete 注释）。
 
     private void processConsolidationResult(Map<String, Object> data, String sessionId, Long userId) {
         JSONObject summaryData = JSONUtil.parseObj(data);
 
-        int consolidationSeq = getNextConsolidationSeq(sessionId);
-
-        // 1. 保存newFacts
+        // 1. 保存newFacts —— 按 (user_id, name) upsert，与对话内 save_memory 收敛到同一 name 键空间，避免重复 active 事实。
+        //    · 同名已存在(active/superseded) → 就地更新并重新激活；
+        //    · 同名已被用户 delete_memory 软删 → 跳过，不因自动抽取而复活；
+        //    · 无 name(legacy) → 直接插入。
         JSONArray factIds = summaryData.getJSONArray("fact_ids");
         JSONArray newFacts = summaryData.getJSONArray("newFacts");
         if (newFacts != null && !newFacts.isEmpty()) {
-            List<MemoryFact> facts = new ArrayList<>();
+            int inserted = 0, updated = 0, skipped = 0;
             for (int i = 0; i < newFacts.size(); i++) {
                 JSONObject fact = newFacts.getJSONObject(i);
                 MemoryFact memoryFact = new MemoryFact();
@@ -259,10 +137,16 @@ public class MemoryResultListener {
                 if (!taskIdStr.isEmpty()) {
                     try { memoryFact.setTaskId(Long.valueOf(taskIdStr)); } catch (NumberFormatException ignored) {}
                 }
-                facts.add(memoryFact);
+                // 文件式记忆索引字段（Task 4）：name/description/type/why/how_to_apply
+                applyIndexFields(memoryFact, fact);
+
+                switch (upsertFactByName(userId, memoryFact)) {
+                    case "updated" -> updated++;
+                    case "skipped" -> skipped++;
+                    default -> inserted++;
+                }
             }
-            memoryFactService.saveBatch(facts);
-            log.info("[MQ结果] 保存新事实, 数量:{}", facts.size());
+            log.info("[MQ结果] 整合事实 upsert 完成, 新增:{} 更新:{} 跳过(已删除):{}", inserted, updated, skipped);
         }
 
         // 2. 更新supersededIds
@@ -295,95 +179,59 @@ public class MemoryResultListener {
             }
         }
 
-        // 3. 保存updatedPreferences
-        JSONArray updatedPreferences = summaryData.getJSONArray("updatedPreferences");
-        if (updatedPreferences != null && !updatedPreferences.isEmpty()) {
-            List<MemoryPreference> preferences = new ArrayList<>();
-            for (int i = 0; i < updatedPreferences.size(); i++) {
-                JSONObject pref = updatedPreferences.getJSONObject(i);
-                String sourceType = pref.getStr("sourceType", "inferred");
-                String action = pref.getStr("action", "upsert");
+        // 3. [已退役] updatedPreferences 不再写 memory_preference。
+        // 偏好已并入 memory_fact(type=user)，由 LLM 的 save_memory/delete_memory 工具精确管理；
+        // 此处忽略 consolidation 产出的 updatedPreferences。
 
-                if ("explicit".equals(sourceType) && "upsert".equals(action)) {
-                    String category = pref.getStr("category");
-                    Integer preferenceCategory = pref.getInt("preferenceCategory", 0);
-                    LambdaQueryWrapper<MemoryPreference> existQuery = new LambdaQueryWrapper<>();
-                    existQuery.eq(MemoryPreference::getUserId, userId)
-                            .eq(MemoryPreference::getCategory, category)
-                            .eq(MemoryPreference::getPreferenceCategory, preferenceCategory);
-                    if (preferenceCategory == PreferenceCategoryEnum.SESSION_PREFERENCE.getCategory()) {
-                        existQuery.eq(MemoryPreference::getSessionId, sessionId);
-                    }
-                    MemoryPreference existing = memoryPreferenceService.getOne(existQuery, false);
-                    if (existing != null) {
-                        existing.setContent(pref.getStr("content"));
-                        existing.setConsolidationSeq(consolidationSeq);
-                        memoryPreferenceService.updateById(existing);
-                    } else {
-                        MemoryPreference mp = new MemoryPreference();
-                        mp.setSessionId(sessionId);
-                        mp.setUserId(userId);
-                        mp.setContent(pref.getStr("content"));
-                        mp.setCategory(category);
-                        mp.setPreferenceCategory(preferenceCategory);
-                        mp.setConsolidationSeq(consolidationSeq);
-                        preferences.add(mp);
-                    }
-                } else {
-                    MemoryPreference mp = new MemoryPreference();
-                    mp.setSessionId(sessionId);
-                    mp.setUserId(userId);
-                    mp.setContent(pref.getStr("content"));
-                    mp.setCategory(pref.getStr("category"));
-                    mp.setPreferenceCategory(pref.getInt("preferenceCategory", 0));
-                    mp.setConsolidationSeq(consolidationSeq);
-                    preferences.add(mp);
-                }
-            }
-            if (!preferences.isEmpty()) {
-                memoryPreferenceService.saveBatch(preferences);
-            }
-            // 清除用户级偏好缓存（所有会话共享）
-            redisTemplate.delete(RedisKey.PREFERENCE_CACHE_USER + userId);
-            // 清除当前会话级偏好缓存
-            redisTemplate.delete(RedisKey.PREFERENCE_CACHE_SESSION + userId + ":" + sessionId);
-            // 整合产生偏好变更后清除个性化推荐缓存
-            if (userId != null) {
-                manualRecommendService.invalidateCache(userId);
-            }
-            log.info("[MQ结果] 保存偏好, 数量:{}", updatedPreferences.size());
-        }
-
-        // 4. 保存updatedUnresolved
+        // 4. updatedUnresolved —— 未决并入 memory_fact(type=unresolved, 用户级)，走与事实相同的 (user_id,name) upsert。
+        //    未决类别(未答复问题/进行中任务/用户待办)存入 description；name 缺省兜底为 todo-<factId>。
         JSONArray updatedUnresolved = summaryData.getJSONArray("updatedUnresolved");
         if (updatedUnresolved != null && !updatedUnresolved.isEmpty()) {
-            List<MemoryUnresolved> unresolvedList = new ArrayList<>();
+            int uIns = 0, uUpd = 0, uSkip = 0;
             for (int i = 0; i < updatedUnresolved.size(); i++) {
-                JSONObject unresolved = updatedUnresolved.getJSONObject(i);
-                MemoryUnresolved mu = new MemoryUnresolved();
-                mu.setSessionId(sessionId);
-                mu.setContent(unresolved.getStr("content"));
-                mu.setType(unresolved.getStr("type"));
-                mu.setStatus(unresolved.getStr("status"));
-                mu.setConsolidationSeq(consolidationSeq);
-                unresolvedList.add(mu);
+                JSONObject u = updatedUnresolved.getJSONObject(i);
+                MemoryFact mf = new MemoryFact();
+                mf.setUserId(userId);
+                mf.setSessionId(sessionId);
+                mf.setFactId("mem:" + UUID.randomUUID().toString().substring(0, 13));
+                mf.setContent(u.getStr("content"));
+                mf.setType("unresolved");
+                mf.setDescription(u.getStr("type"));   // 未决类别存 description
+                mf.setStatus("active");
+                mf.setImportance(5);
+                mf.setUsageCount(0);
+                String name = u.getStr("name");
+                if (name == null || name.isBlank()) {
+                    name = "todo-" + mf.getFactId();
+                }
+                mf.setName(name);
+                switch (upsertFactByName(userId, mf)) {
+                    case "updated" -> uUpd++;
+                    case "skipped" -> uSkip++;
+                    default -> uIns++;
+                }
             }
-            memoryUnresolvedService.saveBatch(unresolvedList);
-            log.info("[MQ结果] 保存待办, 数量:{}", unresolvedList.size());
+            log.info("[MQ结果] 整合未决 upsert 完成, 新增:{} 更新:{} 跳过(已删除):{}", uIns, uUpd, uSkip);
         }
 
-        // 5. 更新resolvedItems
-        JSONArray resolvedItems = summaryData.getJSONArray("resolvedItems");
-        if (resolvedItems != null && !resolvedItems.isEmpty()) {
-            List<Long> resolvedIds = new ArrayList<>();
-            for (int i = 0; i < resolvedItems.size(); i++) {
-                resolvedIds.add(resolvedItems.getLong(i));
+        // 5. resolvedUnresolvedNames —— 整合判定已解决的未决，按 (user_id,name) 软删 type=unresolved 记忆
+        JSONArray resolvedNames = summaryData.getJSONArray("resolvedUnresolvedNames");
+        if (resolvedNames != null && !resolvedNames.isEmpty()) {
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < resolvedNames.size(); i++) {
+                String n = resolvedNames.getStr(i);
+                if (n != null && !n.isBlank()) names.add(n);
             }
-            LambdaUpdateWrapper<MemoryUnresolved> unresolvedWrapper = new LambdaUpdateWrapper<>();
-            unresolvedWrapper.in(MemoryUnresolved::getId, resolvedIds)
-                    .set(MemoryUnresolved::getStatus, "resolved");
-            memoryUnresolvedService.update(unresolvedWrapper);
-            log.info("[MQ结果] 更新已解决事项, 数量:{}", resolvedIds.size());
+            if (!names.isEmpty()) {
+                LambdaUpdateWrapper<MemoryFact> w = new LambdaUpdateWrapper<>();
+                w.eq(MemoryFact::getUserId, userId)
+                        .eq(MemoryFact::getType, "unresolved")
+                        .in(MemoryFact::getName, names)
+                        .ne(MemoryFact::getStatus, "deleted")
+                        .set(MemoryFact::getStatus, "deleted");
+                memoryFactService.update(w);
+                log.info("[MQ结果] 整合标记未决已解决(软删), 数量:{}", names.size());
+            }
         }
 
         // 6. 更新briefSummary
@@ -460,25 +308,34 @@ public class MemoryResultListener {
         log.info("[MQ结果] 用户画像反思保存完成, userId:{}, 维度数:{}", userId, reflections.size());
     }
 
-    private int getNextConsolidationSeq(String sessionId) {
-        LambdaQueryWrapper<MemoryPreference> prefQuery = new LambdaQueryWrapper<>();
-        prefQuery.eq(MemoryPreference::getSessionId, sessionId)
-                .orderByDesc(MemoryPreference::getConsolidationSeq)
-                .last("LIMIT 1");
-        MemoryPreference lastPref = memoryPreferenceService.getOne(prefQuery);
-        int maxSeq = 0;
-        if (lastPref != null && lastPref.getConsolidationSeq() != null) {
-            maxSeq = lastPref.getConsolidationSeq();
+    /**
+     * 按 (user_id, name) upsert 一条 memory_fact，与对话内 save_memory 收敛同一 name 键空间：
+     * 同名 active/superseded → 就地更新并重新激活；同名 deleted → 跳过(不因自动抽取复活)；无同名 → 插入。
+     * 调用前实体须已 setName / setFactId。返回 "inserted"/"updated"/"skipped" 供计数。
+     */
+    private String upsertFactByName(Long userId, MemoryFact mf) {
+        String name = mf.getName();
+        if (name == null || name.isBlank()) {
+            memoryFactService.save(mf);
+            return "inserted";
         }
-        LambdaQueryWrapper<MemoryUnresolved> unresolvedQuery = new LambdaQueryWrapper<>();
-        unresolvedQuery.eq(MemoryUnresolved::getSessionId, sessionId)
-                .orderByDesc(MemoryUnresolved::getConsolidationSeq)
+        LambdaQueryWrapper<MemoryFact> dupQuery = new LambdaQueryWrapper<>();
+        dupQuery.eq(MemoryFact::getUserId, userId)
+                .eq(MemoryFact::getName, name)
                 .last("LIMIT 1");
-        MemoryUnresolved lastUnresolved = memoryUnresolvedService.getOne(unresolvedQuery);
-        if (lastUnresolved != null && lastUnresolved.getConsolidationSeq() != null) {
-            maxSeq = Math.max(maxSeq, lastUnresolved.getConsolidationSeq());
+        MemoryFact existing = memoryFactService.getOne(dupQuery);
+        if (existing == null) {
+            memoryFactService.save(mf);
+            return "inserted";
+        } else if ("deleted".equals(existing.getStatus())) {
+            return "skipped";
+        } else {
+            mf.setId(existing.getId());
+            mf.setFactId(existing.getFactId());   // 保留原 factId，维持引用一致
+            mf.setCreatedAt(existing.getCreatedAt());
+            memoryFactService.updateById(mf);
+            return "updated";
         }
-        return maxSeq + 1;
     }
 
     /**
@@ -511,25 +368,38 @@ public class MemoryResultListener {
     }
 
     /**
-     * 合并旧事实的 sourceSeqRange 和当前纠正轮次
+     * 从结果 JSON 读取文件式记忆索引字段并 set 到 MemoryFact 实体（Task 4）。
      *
-     * 示例：
-     *   oldRange="3-5", currentRound=9  → "3-5,9"
-     *   oldRange="",    currentRound=9  → "9"
-     *   oldRange="3-5", currentRound=null → "3-5"
-     *   oldRange=null,  currentRound=null → null
+     * 字段来源：
+     *   - name/description/type/why：单词字段，camelCase 与 snake_case 同名，直接读
+     *   - how_to_apply：兼容 camelCase(howToApply, 整合/HTTP路径) 与 snake_case(how_to_apply, 实时路径)
+     *
+     * 兜底规则：
+     *   - type 为空 → 默认 "project"
+     *   - name 为空 → 用已设置的 factId 生成 slug（fact-{factId}），保证 index 模式能按 name 寻址
+     *   - why / how_to_apply 可空，null 可接受，直接 set
+     *
+     * 注意：调用本方法前必须已对实体 setFactId（用于 name 兜底）。
      */
-    private String mergeSeqRange(String oldRange, Integer currentRound) {
-        boolean hasOld = oldRange != null && !oldRange.isBlank();
-        boolean hasNew = currentRound != null;
+    private void applyIndexFields(MemoryFact memoryFact, JSONObject src) {
+        String type = src.getStr("type");
+        memoryFact.setType((type != null && !type.isBlank()) ? type : "project");
 
-        if (hasOld && hasNew) {
-            return oldRange + "," + currentRound;
-        } else if (hasOld) {
-            return oldRange;
-        } else if (hasNew) {
-            return String.valueOf(currentRound);
+        memoryFact.setDescription(src.getStr("description"));
+        memoryFact.setWhy(src.getStr("why"));
+        // how_to_apply 兼容两种命名（整合路径 camelCase / 实时路径 snake_case）
+        String howToApply = src.getStr("howToApply");
+        if (howToApply == null) {
+            howToApply = src.getStr("how_to_apply");
         }
-        return null;
+        memoryFact.setHowToApply(howToApply);
+
+        // name 兜底：保证非空，index 模式靠 name 寻址
+        String name = src.getStr("name");
+        if (name == null || name.isBlank()) {
+            String factId = memoryFact.getFactId();
+            name = "fact-" + ((factId != null && !factId.isEmpty()) ? factId : UUID.randomUUID().toString());
+        }
+        memoryFact.setName(name);
     }
 }

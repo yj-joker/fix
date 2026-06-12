@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -19,27 +18,7 @@ public class MemoryMessageProducer {
 
     private final RabbitTemplate rabbitTemplate;
 
-    public void sendRealtimeUpdate(Long sessionId, Long userId, String userMessage,
-                                    String aiResponse, Integer currentRound,
-                                    List<String> recentFacts) {
-        Map<String, Object> msg = new HashMap<>();
-        msg.put("messageId", UUID.randomUUID().toString());
-        msg.put("sessionId", sessionId);
-        msg.put("userId", userId);
-        msg.put("userMessage", userMessage);
-        msg.put("aiResponse", aiResponse);
-        msg.put("currentRound", currentRound);
-        msg.put("recentFacts", recentFacts != null ? recentFacts : List.of());
-        msg.put("createdAt", LocalDateTime.now().toString());
-
-        try {
-            rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.REALTIME_KEY, msg);
-            log.debug("[MQ] 发送实时更新消息, 会话ID:{}, 事实数:{}", sessionId,
-                      recentFacts != null ? recentFacts.size() : 0);
-        } catch (Exception e) {
-            log.error("[MQ] 发送实时更新消息失败, 会话ID:{}, 错误:{}", sessionId, e.getMessage());
-        }
-    }
+    // [已退役] sendRealtimeUpdate 删除：实时记忆更新链路停用，事实纠正改由对话内 save_memory/delete_memory 处理。
 
     public void sendReflection(Long userId, int factCount) {
         Map<String, Object> msg = new HashMap<>();
