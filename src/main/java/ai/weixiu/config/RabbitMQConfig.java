@@ -39,6 +39,12 @@ public class RabbitMQConfig {
     public static final String TASK_STEP_VERIFY_RESULT_QUEUE = "task.step.verify.result.queue";
     public static final String TASK_STEP_VERIFY_RESULT_KEY = "task.step.verify.result";
 
+    // ===== 画像出题队列 =====
+    public static final String QUIZ_GENERATE_QUEUE = "quiz.generate.queue";
+    public static final String QUIZ_GENERATE_KEY = "quiz.generate";
+    public static final String QUIZ_GENERATE_RESULT_QUEUE = "quiz.generate.result.queue";
+    public static final String QUIZ_GENERATE_RESULT_KEY = "quiz.generate.result";
+
     // ===== 记忆反思队列 =====
     public static final String REFLECTION_QUEUE = "memory.reflection.queue";
     public static final String REFLECTION_KEY = "memory.reflection";
@@ -229,6 +235,33 @@ public class RabbitMQConfig {
     @Bean
     public Binding stepVerifyResultBinding() {
         return BindingBuilder.bind(stepVerifyResultQueue()).to(taskExchange()).with(TASK_STEP_VERIFY_RESULT_KEY);
+    }
+
+    // ===== 画像出题队列（复用 task.exchange） =====
+
+    /** 出题生成队列（TTL 5min，LLM 检索+生成耗时） */
+    @Bean
+    public Queue quizGenerateQueue() {
+        return QueueBuilder.durable(QUIZ_GENERATE_QUEUE)
+                .withArgument("x-message-ttl", 300_000)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .build();
+    }
+
+    @Bean
+    public Binding quizGenerateBinding() {
+        return BindingBuilder.bind(quizGenerateQueue()).to(taskExchange()).with(QUIZ_GENERATE_KEY);
+    }
+
+    /** 出题生成结果队列（Python → Java） */
+    @Bean
+    public Queue quizGenerateResultQueue() {
+        return QueueBuilder.durable(QUIZ_GENERATE_RESULT_QUEUE).build();
+    }
+
+    @Bean
+    public Binding quizGenerateResultBinding() {
+        return BindingBuilder.bind(quizGenerateResultQueue()).to(taskExchange()).with(QUIZ_GENERATE_RESULT_KEY);
     }
 
     // ===== Serialization =====
