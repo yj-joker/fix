@@ -1122,10 +1122,20 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
 
     private TaskStepRecordVO toStepVO(TaskStepRecord record) {
         TaskStepRecordVO vo = new TaskStepRecordVO();
-        // sources 单独结构化解析，避免 Object → List<StepSourceVO> 直接 copy 失败
-        BeanUtils.copyProperties(record, vo, "sources");
+        // sources 单独结构化解析；aiConfidence 由 0-1 原始值换算成等级（类型不同，单独 set）
+        BeanUtils.copyProperties(record, vo, "sources", "aiConfidence");
         vo.setSources(parseStepSources(record.getSources()));
+        vo.setAiConfidence(confidenceLevel(record.getAiConfidence()));
         return vo;
+    }
+
+    /** AI 验收置信度(0-1) 转展示等级：&gt;80% 高，[50%,80%] 中，&lt;50% 低。 */
+    private String confidenceLevel(java.math.BigDecimal conf) {
+        if (conf == null) return null;
+        double v = conf.doubleValue();
+        if (v > 0.8) return "高";
+        if (v < 0.5) return "低";
+        return "中";
     }
 
     /**
@@ -1246,6 +1256,7 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         maintenance.put("task", t);
 
         List<String> overview = new ArrayList<>();
+        List<Map<String, Object>> rejectedSteps = new ArrayList<>();
         int doneCount = 0;
         Integer focusedOrder = null;
         TaskStepRecord focused = null;
@@ -1256,8 +1267,17 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
                 focused = s;
                 focusedOrder = s.getSortOrder();
             }
+            // 收集未通过步骤的驳回理由：工人常回头追问这类步骤，但若未聚焦则拿不到细节
+            if ("AI_REJECTED".equals(s.getStatus()) && s.getAiReason() != null && !s.getAiReason().isBlank()) {
+                Map<String, Object> rj = new HashMap<>();
+                rj.put("sortOrder", s.getSortOrder());
+                rj.put("title", s.getTitle());
+                rj.put("aiReason", s.getAiReason());
+                rejectedSteps.add(rj);
+            }
         }
         maintenance.put("overview", overview);
+        if (!rejectedSteps.isEmpty()) maintenance.put("rejectedSteps", rejectedSteps);
 
         if (focused != null) {
             TaskStepRecordVO fvo = toStepVO(focused); // 复用：拿到结构化证据
@@ -1267,6 +1287,12 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             fs.put("content", fvo.getContent());
             fs.put("safetyNote", fvo.getSafetyNote());
             fs.put("checkpointItems", fvo.getCheckpointItems());
+            // 执行态：让助手能回答"这步为什么没过 / 我该怎么改 / 重传还是强制完成"
+            fs.put("status", statusLabel(focused.getStatus()));
+            if (focused.getNote() != null && !focused.getNote().isBlank()) fs.put("note", focused.getNote());
+            if (focused.getAiReason() != null && !focused.getAiReason().isBlank()) fs.put("aiReason", focused.getAiReason());
+            String aiConfLevel = confidenceLevel(focused.getAiConfidence());
+            if (aiConfLevel != null) fs.put("aiConfidence", aiConfLevel);
             String srcText = summarizeSources(fvo.getSources());
             if (srcText != null) fs.put("sources", srcText);
             maintenance.put("focusedStep", fs);
