@@ -11,6 +11,8 @@ import java.util.List;
  */
 @Data
 public class CaseDraftVO {
+    private String sourceType;      // task/file/note_photo/voice（上传通道带回，提交时透传）
+    private String sourceFileUrl;   // 上传文件原件地址（file/note_photo 通道，可空）
     private Long sourceTaskId;
     private String deviceId;
     private String deviceName;

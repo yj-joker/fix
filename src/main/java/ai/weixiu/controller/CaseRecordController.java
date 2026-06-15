@@ -10,7 +10,11 @@ import ai.weixiu.utils.VoConverter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/weixiu/case-record")
@@ -51,6 +55,16 @@ public class CaseRecordController {
     @Operation(summary = "从已关闭检修任务起草案例草稿(AI起草,不落库)")
     public Result<CaseDraftVO> draftFromTask(@PathVariable Long taskId) {
         return Result.success(caseRecordService.draftFromTask(taskId));
+    }
+
+    @PostMapping(value = "/draft-from-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "从上传材料起草案例草稿(文件/图片/文字/语音转写,AI起草,不落库)")
+    public Result<CaseDraftVO> draftFromUpload(
+            @RequestParam(value = "files", required = false) List<MultipartFile> files,
+            @RequestParam(value = "imageUrls", required = false) List<String> imageUrls,
+            @RequestParam(value = "rawText", required = false) String rawText,
+            @RequestParam(value = "sourceType", required = false) String sourceType) {
+        return Result.success(caseRecordService.draftFromUpload(files, imageUrls, rawText, sourceType));
     }
 
     @PostMapping("/submit")

@@ -82,36 +82,8 @@ CREATE TABLE IF NOT EXISTS `memory_fact` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '事实记忆表';
 
 
--- =============================================
--- 5. 记忆系统 - 用户偏好表
--- =============================================
-CREATE TABLE IF NOT EXISTS `memory_preference` (
-    `id`                  BIGINT      AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
-    `user_id`             BIGINT      NOT NULL COMMENT '用户ID',
-    `session_id`          VARCHAR(64) NOT NULL COMMENT '会话ID',
-    `preference_category` TINYINT(1)  DEFAULT 0 COMMENT '偏好类型: 0=用户偏好, 1=会话偏好',
-    `content`             TEXT        NOT NULL COMMENT '偏好描述',
-    `category`            VARCHAR(50) DEFAULT '其他' COMMENT '分类: 交互风格/格式要求/工作习惯/关注领域/其他',
-    `source_type`         VARCHAR(20) DEFAULT 'inferred' COMMENT '来源类型: explicit=用户明确说出, inferred=从行为推断',
-    `consolidation_seq`   INT         DEFAULT 1 COMMENT '第几次压缩产生的',
-    `created_at`          DATETIME    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    INDEX `idx_session` (`session_id`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户偏好记忆表';
 
 
--- =============================================
--- 6. 记忆系统 - 未完成事项表
--- =============================================
-CREATE TABLE IF NOT EXISTS `memory_unresolved` (
-    `id`                BIGINT      AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
-    `session_id`        VARCHAR(64) NOT NULL COMMENT '会话ID',
-    `content`           TEXT        NOT NULL COMMENT '待解决描述',
-    `type`              VARCHAR(50) DEFAULT '待办' COMMENT '类型: 未答复问题/进行中任务/用户待办',
-    `consolidation_seq` INT         DEFAULT 1 COMMENT '第几次压缩产生的',
-    `status`            ENUM('active', 'superseded') DEFAULT 'active' COMMENT '状态: active=待处理, superseded=已完成或放弃',
-    `created_at`        DATETIME    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    INDEX `idx_session` (`session_id`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '未完成事项记忆表';
 
 
 -- =============================================
@@ -395,9 +367,3 @@ ALTER TABLE `memory_fact`
 ALTER TABLE `memory_fact`
     MODIFY COLUMN `status` ENUM('active','superseded','deleted') DEFAULT 'active' COMMENT '状态: active/superseded/deleted';
 
--- ---------------------------------------------
--- 3.（可选增强）memory_preference 加列
--- ---------------------------------------------
-ALTER TABLE `memory_preference`
-    ADD COLUMN `name`   VARCHAR(128) NULL                   COMMENT '偏好名称',
-    ADD COLUMN `status` VARCHAR(16)  NULL DEFAULT 'active'  COMMENT '状态: active=有效, deleted=已删除';

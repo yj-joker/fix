@@ -3,6 +3,7 @@ package ai.weixiu.service.impl;
 import ai.weixiu.entity.CaseRecord;
 import ai.weixiu.entity.MaintenanceTask;
 import ai.weixiu.entity.TaskStepRecord;
+import ai.weixiu.enumerate.BucketEnum;
 import ai.weixiu.enumerate.RelationType;
 import ai.weixiu.exceprion.NotFoundException;
 import ai.weixiu.exceprion.TaskStateException;
@@ -17,6 +18,7 @@ import ai.weixiu.pojo.vo.FaultVO;
 import ai.weixiu.repository.CaseRecordRepository;
 import ai.weixiu.service.CaseRecordService;
 import ai.weixiu.service.FaultService;
+import ai.weixiu.service.MioIOUpLoadService;
 import ai.weixiu.service.RelationService;
 import ai.weixiu.utils.BaseContext;
 import ai.weixiu.utils.BuildStringUtils;
@@ -31,10 +33,12 @@ import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +60,7 @@ public class CaseRecordServiceImpl implements CaseRecordService {
     private final ObjectMapper objectMapper;
     private final FaultService faultService;
     private final RelationService relationService;
+    private final MioIOUpLoadService mioIOUpLoadService;
     private final String notFoundMessage = "案例记录不存在";
 
     /** 案例尽力连边时，故障向量匹配的最小相似度（低于则不连，不新建 Fault） */
@@ -186,35 +191,121 @@ public class CaseRecordServiceImpl implements CaseRecordService {
     }
 
     @Override
+    public CaseDraftVO draftFromUpload(List<MultipartFile> files, List<String> imageUrls,
+                                       String rawText, String sourceType) {
+        // 0. 至少要有一种素材
+        boolean hasFile = files != null && files.stream().anyMatch(f -> f != null && !f.isEmpty());
+        boolean hasImage = imageUrls != null && !imageUrls.isEmpty();
+        boolean hasText = StringUtils.hasText(rawText);
+        if (!hasFile && !hasImage && !hasText) {
+            throw new TaskStateException("请至少提供文字描述、文件或图片");
+        }
+
+        // 1. 文档存 MinIO（私有桶，留原件可溯源）+ 转 Base64 交 Python 抽取
+        String sourceFileUrl = null;
+        List<Map<String, String>> extractFiles = new ArrayList<>();
+        if (hasFile) {
+            for (MultipartFile f : files) {
+                if (f == null || f.isEmpty()) continue;
+                try {
+                    String stored = mioIOUpLoadService.upload(f, BucketEnum.PRIVATE);
+                    if (sourceFileUrl == null) sourceFileUrl = stored;
+                } catch (Exception e) {
+                    log.warn("[案例] 文件存档失败 name={}: {}", f.getOriginalFilename(), e.getMessage());
+                }
+                try {
+                    Map<String, String> item = new HashMap<>();
+                    item.put("name", f.getOriginalFilename() == null ? "file" : f.getOriginalFilename());
+                    item.put("content_base64", Base64.getEncoder().encodeToString(f.getBytes()));
+                    extractFiles.add(item);
+                } catch (Exception e) {
+                    log.warn("[案例] 文件读取失败 name={}: {}", f.getOriginalFilename(), e.getMessage());
+                }
+            }
+        }
+
+        // 2. 图片转 Base64（既供 OCR，也供起草多模态）
+        List<String> base64Images = hasImage ? imagesForLlm(imageUrls) : null;
+
+        // 3. 调 Python 抽取文件文字 + 图片 OCR
+        String extracted = "";
+        if (!extractFiles.isEmpty() || (base64Images != null && !base64Images.isEmpty())) {
+            Map<String, Object> exReq = new HashMap<>();
+            if (!extractFiles.isEmpty()) exReq.put("files", extractFiles);
+            if (base64Images != null && !base64Images.isEmpty()) exReq.put("images", base64Images);
+            try {
+                String resp = webClient.post()
+                        .uri("/ai/case/extract")
+                        .bodyValue(exReq)
+                        .retrieve()
+                        .bodyToMono(String.class)
+                        .block();
+                JsonNode node = objectMapper.readTree(resp);
+                extracted = jsonText(node, "text");
+            } catch (Exception e) {
+                log.warn("[案例] 素材抽取失败: {}", e.getMessage());
+            }
+        }
+
+        // 4. 汇总素材：抽取文字 + 工人文字描述
+        StringBuilder material = new StringBuilder();
+        if (StringUtils.hasText(extracted)) material.append(extracted).append("\n\n");
+        if (hasText) material.append("【工人补充描述】\n").append(rawText.trim());
+        if (!StringUtils.hasText(material.toString())) {
+            throw new TaskStateException("未能从上传材料中提取到有效文字，请补充文字描述后再试");
+        }
+
+        // 4.5 前置合规闸：起草前先审一遍原始素材，违规内容上传即拦（省掉起草 token、即时反馈）。
+        //     提交时还会再审一遍编辑后的内容（双保险），此处复用同一个 /ai/case/compliance。
+        checkComplianceOrThrow(material.toString());
+
+        // 5. 调 Python 起草
+        String type = StringUtils.hasText(sourceType) ? sourceType : "file";
+        Map<String, Object> body = new HashMap<>();
+        body.put("source_type", type);
+        body.put("raw_text", material.toString());
+        if (base64Images != null && !base64Images.isEmpty()) {
+            body.put("images", base64Images);
+        }
+        CaseDraftVO vo = new CaseDraftVO();
+        try {
+            String resp = webClient.post()
+                    .uri("/ai/case/draft")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            JsonNode node = objectMapper.readTree(resp);
+            vo.setTitle(jsonText(node, "title"));
+            vo.setSummary(jsonText(node, "summary"));
+            vo.setDiagnosis(jsonText(node, "diagnosis"));
+            vo.setResolution(jsonText(node, "resolution"));
+            vo.setResult(jsonText(node, "result"));
+            vo.setExperienceSummary(jsonText(node, "experience_summary"));
+            vo.setTags(jsonText(node, "tags"));
+            if (node.hasNonNull("downtime")) vo.setDowntime(node.get("downtime").asInt());
+            if (node.hasNonNull("cost")) vo.setCost(node.get("cost").asDouble());
+        } catch (Exception e) {
+            log.warn("[案例] AI 起草失败(上传通道): {}", e.getMessage());
+            throw new TaskStateException("AI 起草失败：" + e.getMessage());
+        }
+
+        // 6. 带回通道线索（imageUrls 用原始公网 URL，供展示/入库/向量化）
+        vo.setSourceType(type);
+        vo.setSourceFileUrl(sourceFileUrl);
+        vo.setImageUrls(hasImage ? imageUrls : null);
+        return vo;
+    }
+
+    @Override
     @Transactional
     public void submit(CaseRecordDTO dto) {
         // 1. 拼合规文本
         String text = String.join("\n",
                 nz(dto.getTitle()), nz(dto.getSummary()), nz(dto.getDiagnosis()),
                 nz(dto.getResolution()), nz(dto.getExperienceSummary()));
-        // 2. 合规闸门
-        Map<String, Object> body = new HashMap<>();
-        body.put("text", text);
-        boolean compliant;
-        String reason;
-        try {
-            String resp = webClient.post()
-                    .uri("/ai/case/compliance")
-                    .bodyValue(body)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            JsonNode node = objectMapper.readTree(resp);
-            compliant = node.hasNonNull("compliant") && node.get("compliant").asBoolean();
-            reason = jsonText(node, "reason");
-        } catch (Exception e) {
-            log.warn("[案例] 合规校验失败: {}", e.getMessage());
-            throw new TaskStateException("合规校验服务异常：" + e.getMessage());
-        }
-        // 3. 不通过则拦截提交（reason 给前端展示）
-        if (!compliant) {
-            throw new TaskStateException(StringUtils.hasText(reason) ? reason : "内容未通过合规审核，无法提交");
-        }
+        // 2. 合规闸门（不通过抛异常拦截，通过返回合规留痕 reason）
+        String reason = checkComplianceOrThrow(text);
         // 4. 落 pending（暂不向量化，向量化在 approve 时强制执行）
         CaseRecord c = new CaseRecord();
         c.setId(UUID.randomUUID().toString());
@@ -244,6 +335,36 @@ public class CaseRecordServiceImpl implements CaseRecordService {
 
     private static String nz(String s) {
         return s == null ? "" : s;
+    }
+
+    /**
+     * 合规闸门：调 /ai/case/compliance 判定文本是否相关且合法。
+     * <p>不通过抛业务异常（reason 给前端展示）；校验服务异常同样抛出（不放行未审内容）；
+     * 通过则返回合规留痕 reason。上传起草前置闸与提交闸共用此方法。</p>
+     */
+    private String checkComplianceOrThrow(String text) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("text", text);
+        boolean compliant;
+        String reason;
+        try {
+            String resp = webClient.post()
+                    .uri("/ai/case/compliance")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            JsonNode node = objectMapper.readTree(resp);
+            compliant = node.hasNonNull("compliant") && node.get("compliant").asBoolean();
+            reason = jsonText(node, "reason");
+        } catch (Exception e) {
+            log.warn("[案例] 合规校验失败: {}", e.getMessage());
+            throw new TaskStateException("合规校验服务异常：" + e.getMessage());
+        }
+        if (!compliant) {
+            throw new TaskStateException(StringUtils.hasText(reason) ? reason : "内容未通过合规审核，无法提交");
+        }
+        return reason;
     }
 
     @Override
