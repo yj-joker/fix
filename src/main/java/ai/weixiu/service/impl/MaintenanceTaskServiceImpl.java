@@ -558,11 +558,15 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
 
         // component name → neo4j id 映射
         Map<String, String> componentIdMap = new HashMap<>();
+        // component name → relation（部件与本次故障的关系，存到 CAUSES 边上）
+        Map<String, String> componentRelationMap = new HashMap<>();
         for (Map<String, Object> comp : components) {
             String compName = (String) comp.get("name");
             if (compName == null || compName.isBlank()) continue;
             String compId = findOrCreateComponent(compName, deviceNodeId);
             componentIdMap.put(compName, compId);
+            String relation = (String) comp.get("relation");
+            if (relation != null && !relation.isBlank()) componentRelationMap.put(compName, relation.trim());
         }
 
         // fault name → neo4j id 映射
@@ -576,10 +580,12 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
             String faultId = createFaultNode(faultName, severity, task.getFaultDescription());
             faultIdMap.put(faultName, faultId);
 
-            // 关联 Component → Fault (CAUSES)
+            // 关联 Component → Fault (CAUSES)，并把部件-故障关系描述写到边上
             String compId = componentIdMap.get(relatedComp);
             if (compId != null) {
                 createRelationship(compId, faultId, "CAUSES");
+                String relation = componentRelationMap.get(relatedComp);
+                if (relation != null) setCausesRelation(compId, faultId, relation);
             }
             // 关联 Device → Fault (HAS_FAULT)
             createRelationship(deviceNodeId, faultId, "HAS_FAULT");
@@ -704,6 +710,16 @@ public class MaintenanceTaskServiceImpl implements MaintenanceTaskService {
         .fetchAs(String.class)
         .one()
         .orElseThrow(() -> new RuntimeException("创建解决方案节点失败: " + title));
+    }
+
+    private void setCausesRelation(String compId, String faultId, String relation) {
+        // 把「部件与本次故障的关系」描述写到 CAUSES 边的 relation 属性上
+        neo4jClient.query(
+                "MATCH (a {id: $fromId})-[r:CAUSES]->(b {id: $toId}) SET r.relation = $relation"
+        ).bind(compId).to("fromId")
+        .bind(faultId).to("toId")
+        .bind(relation).to("relation")
+        .run();
     }
 
     private void createRelationship(String fromId, String toId, String relType) {
