@@ -4,6 +4,7 @@ import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.entity.User;
 import ai.weixiu.pojo.query.UserQuery;
+import ai.weixiu.pojo.vo.BatchRegisterResultVO;
 import ai.weixiu.pojo.vo.UserVO;
 import com.baomidou.mybatisplus.extension.service.IService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,7 +22,7 @@ import java.util.List;
  */
 public interface UserService extends IService<User> {
 
-    int batchRegister(MultipartFile file);
+    BatchRegisterResultVO batchRegister(MultipartFile file);
 
     UserVO login(UserLoginDTO userLoginDTO, HttpServletRequest httpServletRequest);
 

@@ -8,6 +8,7 @@ import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.entity.User;
 import ai.weixiu.mapper.UserMapper;
 import ai.weixiu.pojo.query.UserQuery;
+import ai.weixiu.pojo.vo.BatchRegisterResultVO;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.UserService;
 import ai.weixiu.utils.BaseContext;
@@ -35,12 +36,12 @@ import org.springframework.web.multipart.MultipartFile;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -76,68 +77,84 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * */
     @Override
     @Transactional
-    public int batchRegister(MultipartFile file) {
-        //判断文件是否是excel文件
+    public BatchRegisterResultVO batchRegister(MultipartFile file) {
+        // 1. 文件类型校验
         if (!ExcelUtils.isExcelFile(file)) {
             throw new FormatErrorException("必须上传excel文件");
         }
-        //读取excel获取数据
-        List<User> users = ExcelUtils.readExcel(file, User.class);
-        log.info("共读取到 {} 条数据，开始处理", users.size());
+        List<User> rows = ExcelUtils.readExcel(file, User.class);
+        log.info("共读取到 {} 条数据，开始处理", rows.size());
 
-        // 创建线程池，线程数根据CPU核心数设置
-        int threadCount = Runtime.getRuntime().availableProcessors();
-        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-        //设置每次处理的记录数
-        int batchSize = 500;
-        List<CompletableFuture<List<User>>> futures = new ArrayList<>();
-
-        // 多线程并行处理密码加密
-        for (int i = 0; i < users.size(); i += batchSize) {
-            int end = Math.min(i + batchSize, users.size());
-            List<User> batch = users.subList(i, end);
-
-            CompletableFuture<List<User>> future = CompletableFuture.supplyAsync(() -> {
-                LocalDateTime now = LocalDateTime.now();
-                for (User user : batch) {
-                    user.setPassword(passwordEncoder.encode("123456"));
-                    user.setCreateTime(now);
-                    user.setUpdateTime(now);
-                }
-                return batch;
-            }, executor);
-            futures.add(future);
+        BatchRegisterResultVO result = new BatchRegisterResultVO();
+        result.setTotal(rows.size());
+        if (rows.isEmpty()) {
+            return result;
         }
 
-        // 等待所有加密任务完成
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-        // 收集加密后的数据并保存
-        List<User> allProcessedUsers = new ArrayList<>();
-        for (CompletableFuture<List<User>> future : futures) {
-            allProcessedUsers.addAll(future.join());
+        // 2. 行内校验 + 文件内去重（username=身份证号）
+        List<User> candidates = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        int rowNo = 1; // 表头第 1 行，数据从第 2 行起
+        for (User u : rows) {
+            rowNo++;
+            String username = u.getUsername() == null ? null : u.getUsername().trim();
+            if (username == null || username.isBlank()) {
+                result.addFailure(rowNo, username, "身份证号(登录账号)为空");
+                continue;
+            }
+            if (u.getName() == null || u.getName().isBlank()) {
+                result.addFailure(rowNo, username, "姓名为空");
+                continue;
+            }
+            if (!seen.add(username)) {
+                result.addFailure(rowNo, username, "文件内身份证号重复");
+                continue;
+            }
+            u.setUsername(username);
+            candidates.add(u);
         }
 
-        // 分批保存到数据库
-        int totalSaved = 0;
-        for (int i = 0; i < allProcessedUsers.size(); i += batchSize) {
-            int end = Math.min(i + batchSize, allProcessedUsers.size());
-            List<User> batch = allProcessedUsers.subList(i, end);
-            this.saveBatch(batch);
-            totalSaved += batch.size();
-            log.info("已保存第 {} 批数据，累计 {} 条", (i / batchSize + 1), totalSaved);
+        // 3. 与数据库已有账号去重（一次性查询）
+        if (!candidates.isEmpty()) {
+            Set<String> names = candidates.stream().map(User::getUsername).collect(Collectors.toSet());
+            Set<String> existing = this.list(new LambdaQueryWrapper<User>()
+                            .select(User::getUsername).in(User::getUsername, names))
+                    .stream().map(User::getUsername).collect(Collectors.toSet());
+            if (!existing.isEmpty()) {
+                candidates.removeIf(u -> {
+                    if (existing.contains(u.getUsername())) {
+                        result.addFailure(0, u.getUsername(), "账号已存在");
+                        return true;
+                    }
+                    return false;
+                });
+            }
         }
 
-        // 关闭线程池
-        executor.shutdown();
-        try {
-            executor.awaitTermination(1, TimeUnit.HOURS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        if (candidates.isEmpty()) {
+            log.info("批量注册无有效数据：总{} 失败{}", result.getTotal(), result.getFailed());
+            return result;
         }
 
-        log.info("全部数据保存完成，共 {} 条", totalSaved);
-        return totalSaved;
+        // 4. 服务端强制安全字段（防 Excel 越权）：
+        //    - 密码统一默认 123456（每行独立加盐，并行加密提速）
+        //    - type 强制 0(员工)，杜绝 Excel 把 用户类型 填成 1 批量造管理员
+        //    - status 置 1(已激活)，避免 login 对 null status 拆箱 NPE
+        LocalDateTime now = LocalDateTime.now();
+        candidates.parallelStream().forEach(u -> {
+            u.setId(null);
+            u.setPassword(passwordEncoder.encode("123456"));
+            u.setType(0);
+            u.setStatus(1);
+            u.setCreateTime(now);
+            u.setUpdateTime(now);
+        });
+
+        // 5. 入库（方法 @Transactional，整批原子；候选已去重/校验，正常不会失败）
+        this.saveBatch(candidates);
+        result.setSuccess(candidates.size());
+        log.info("批量注册完成：总{} 成功{} 失败{}", result.getTotal(), result.getSuccess(), result.getFailed());
+        return result;
     }
 
     /*

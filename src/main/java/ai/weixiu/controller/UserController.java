@@ -1,18 +1,22 @@
 package ai.weixiu.controller;
 
 
+import ai.weixiu.annotation.RequireAdmin;
 import ai.weixiu.enumerate.BucketEnum;
 import ai.weixiu.pojo.Result;
 import ai.weixiu.pojo.dto.UserDTO;
 import ai.weixiu.pojo.dto.UserLoginDTO;
 import ai.weixiu.pojo.query.UserQuery;
+import ai.weixiu.pojo.vo.BatchRegisterResultVO;
 import ai.weixiu.pojo.vo.UserVO;
 import ai.weixiu.service.MioIOUpLoadService;
 import ai.weixiu.service.UserService;
 import ai.weixiu.utils.AliyunUpLoadUtils;
+import com.alibaba.excel.EasyExcel;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -24,6 +28,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -44,13 +51,36 @@ public class UserController {
     private final MioIOUpLoadService minIOUpLoadService;
 
     /*
-     * 用户注册
+     * Excel 批量注册用户（仅管理员）
      * */
     @PostMapping(value = "/register", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "用户注册")
-    public Result batchRegister(@RequestParam("file") MultipartFile file) {
-        userService.batchRegister(file);
-        return Result.success();
+    @Operation(summary = "Excel批量注册用户")
+    @RequireAdmin
+    public Result<BatchRegisterResultVO> batchRegister(@RequestParam("file") MultipartFile file) {
+        return Result.success(userService.batchRegister(file));
+    }
+
+    /*
+     * 下载批量注册 Excel 模板（仅管理员）
+     * 表头须与 User 的 @ExcelProperty 一致；用户类型由后端强制为员工，故模板不含该列
+     * */
+    @GetMapping("/register-template")
+    @Operation(summary = "下载批量注册Excel模板")
+    @RequireAdmin
+    public void downloadRegisterTemplate(HttpServletResponse response) throws IOException {
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setCharacterEncoding("utf-8");
+        String fileName = URLEncoder.encode("用户批量导入模板", StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+        response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
+
+        List<List<String>> head = Arrays.asList(
+                List.of("身份证号"), List.of("姓名"), List.of("工号"),
+                List.of("性别"), List.of("手机号"), List.of("邮箱"), List.of("入职日期"));
+        // 示例行：性别填 0(男)/1(女)，入职日期 yyyy-MM-dd
+        List<List<Object>> sample = List.of(Arrays.asList(
+                (Object) "110101199001011234", "张三", "G001", 0, "13800138000", "zhangsan@example.com", "2024-01-15"));
+
+        EasyExcel.write(response.getOutputStream()).head(head).sheet("用户导入").doWrite(sample);
     }
 
     /*
