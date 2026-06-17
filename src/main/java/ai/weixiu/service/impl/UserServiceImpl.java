@@ -165,6 +165,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 //        }
         // 登录成功,设置最后登录时间
         user.setLastLoginTime(LocalDateTime.now());
+        //如果第一次登录设置用户状态为已经激活
+        if (user.getStatus() == 0) {
+            user.setStatus(1);
+        }
         this.updateById(user);
         HttpSession httpSession = httpServletRequest.getSession();
         //设置用户id到redis当中,过期时间1天

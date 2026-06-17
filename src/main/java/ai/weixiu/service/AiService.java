@@ -8,6 +8,4 @@ public interface AiService {
     Flux<String> chat(AiChatRequest request);
 
     String getStringByVoiceViaLLM(MultipartFile file);
-
-    String getStringByVoiceViaBaidu(MultipartFile file);
 }

@@ -145,6 +145,12 @@
             <artifactId>minio</artifactId>
             <version>8.5.7</version>
         </dependency>
+        <!-- DashScope（百炼）Java SDK：实时语音识别 Paraformer。版本可按需升到最新 -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>dashscope-sdk-java</artifactId>
+            <version>2.18.0</version>
+        </dependency>
     </dependencies>
 
     <build>

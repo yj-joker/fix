@@ -22,7 +22,6 @@ import ai.weixiu.service.ManualRecommendService;
 import ai.weixiu.utils.AiStreamEventUtils;
 import ai.weixiu.utils.BaseContext;
 import ai.weixiu.utils.MultimodalEmbeddingUtils;
-import ai.weixiu.utils.VoiceToTextUtils;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import lombok.AllArgsConstructor;
@@ -58,7 +57,6 @@ public class AiServiceImpl implements AiService {
     private final MultimodalEmbeddingUtils multimodalEmbeddingUtils;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Integer maxMemory = 4;
-    private final VoiceToTextUtils voiceToTextUtils;
 
 
     @Override
@@ -152,14 +150,6 @@ public class AiServiceImpl implements AiService {
         log.info("语音识别结果: {}", text);
         return text;
 
-    }
-
-    /*
-     * 声音->文本(调用百度语音识别大模型)
-     * */
-    @Override
-    public String getStringByVoiceViaBaidu(MultipartFile file) {
-        return voiceToTextUtils.transcribe(file);
     }
 
     private boolean isValid(MultipartFile file) {

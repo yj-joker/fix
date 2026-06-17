@@ -77,15 +77,6 @@ aliyun:
 ai:
   internal-token: fix-agent-internal-2026
 apikey: sk-f199940e398640bc80501379bfd58bca
-baidu:
-  speech:
-    app-id: 7754728
-    api-key: zUqRgdzdmaDswQHHPy1seSbk
-    secret-key: yGs8d6gOaQ8tjP2seJEt5U4glXtOhtj2
-    cuid: fix-agent-asr
-    dev-pid: 1537
-    rate: 16000
-    max-upload-mb: 10
 # ===== MinIO 配置 =====
 minio:
   endpoint: http://localhost:9000
